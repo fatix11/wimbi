@@ -1,0 +1,74 @@
+[
+  {
+    "glClientId": "GL-MW-00001",
+    "name": "Grace Banda",
+    "phone": "+265991234001",
+    "country": "Malawi",
+    "district": "Lilongwe",
+    "programs": ["Credit", "Trees"],
+    "joinDate": "2022-09-12"
+  },
+  {
+    "glClientId": "GL-MW-00002",
+    "name": "Chikondi Phiri",
+    "phone": "+265991234002",
+    "country": "Malawi",
+    "district": "Kasungu",
+    "programs": ["Credit", "Market Access"],
+    "joinDate": "2021-08-03"
+  },
+  {
+    "glClientId": "GL-MW-00003",
+    "name": "Esther Mwale",
+    "phone": "+265991234003",
+    "country": "Malawi",
+    "district": "Mzimba",
+    "programs": ["Trees"],
+    "joinDate": "2023-10-21"
+  },
+  {
+    "glClientId": "GL-MW-00004",
+    "name": "Yamikani Zulu",
+    "phone": "+265991234004",
+    "country": "Malawi",
+    "district": "Zomba",
+    "programs": ["Credit", "Trees", "Market Access"],
+    "joinDate": "2020-07-15"
+  },
+  {
+    "glClientId": "GL-MW-00005",
+    "name": "Patuma Nyirenda",
+    "phone": "+265991234005",
+    "country": "Malawi",
+    "district": "Salima",
+    "programs": ["Credit"],
+    "joinDate": "2024-09-02"
+  },
+  {
+    "glClientId": "GL-MW-00006",
+    "name": "Steven Kachale",
+    "phone": "+265991234006",
+    "country": "Malawi",
+    "district": "Dedza",
+    "programs": ["Market Access"],
+    "joinDate": "2019-11-30"
+  },
+  {
+    "glClientId": "GL-KE-00001",
+    "name": "Wanjiru Kamau",
+    "phone": "+254712340001",
+    "country": "Kenya",
+    "district": "Nakuru",
+    "programs": ["Credit", "Trees"],
+    "joinDate": "2022-03-18"
+  },
+  {
+    "glClientId": "GL-RW-00001",
+    "name": "Uwase Mukamana",
+    "phone": "+250788340001",
+    "country": "Rwanda",
+    "district": "Musanze",
+    "programs": ["Credit"],
+    "joinDate": "2021-05-09"
+  }
+]
