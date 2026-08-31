@@ -3,9 +3,10 @@
 Farmer 360 for OAF — a role-based web app giving staff a unified view of a
 farmer's history across programs (credit, trees, sales, buyback).
 
-Read `business_requirements.md`, `features_and_user_stories.md`, and
-`delivery_strategy.md` first — they're the maintained source of truth for
-what this is and how it's meant to be built. `to_do.md` tracks live progress.
+Read `_docs/business_requirements.md`, `_docs/features_and_user_stories.md`,
+and `_docs/delivery_strategy.md` first — they're the maintained source of
+truth for what this is and how it's meant to be built. `_docs/to_do.md`
+tracks live progress.
 
 ## Current state
 

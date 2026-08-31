@@ -4,7 +4,7 @@ import type { Farmer, JourneyEvent } from "./types";
 
 // Real ANALYTICS.REPORTING implementation. Not wired to live credentials yet
 // (see .env.local.example) — V_CLIENT_JOURNEY is the view name confirmed in
-// business_requirements.md; V_FARMER_PROFILE's exact name is assumed pending
+// _docs/business_requirements.md; V_FARMER_PROFILE's exact name is assumed pending
 // confirmation from the ANALYTICS team.
 
 function requireEnv(name: string): string {

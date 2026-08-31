@@ -2,7 +2,7 @@ import type { Farmer } from "@/data/types";
 import type { SessionUser } from "@/auth/session";
 
 // "data_team" is the one role with cross-country scope for the internal
-// pilot (see business_requirements.md §7); every other role/persona is
+// pilot (see _docs/business_requirements.md §7); every other role/persona is
 // scoped to their own country.
 export function hasAllCountryScope(user: SessionUser): boolean {
   return user.role === "data_team";
