@@ -2,7 +2,7 @@
 
 **Purpose:** Self-tracker for progress against `delivery_strategy.md`. This doc changes constantly — check items off as they're actually done, update **Last updated**, and leave `delivery_strategy.md` itself alone (that one's the stable reference).
 
-**Last updated:** 2026-08-31
+**Last updated:** 2026-09-01
 **Current phase:** Phase 0
 
 ---
@@ -42,3 +42,4 @@ Short dated entries when something meaningful gets checked off or a phase change
 
 - 2026-08-31 — Tracker created, nothing started yet.
 - 2026-08-31 — Scaffolded the Next.js app and shipped the first vertical slice: dev-login (Auth.js, stand-in for Keycloak) → farmer search → profile → Journey Timeline, RBAC-scoped by country, running on mock fixture data behind a swappable `DataSource` interface (real Snowflake client built but not wired to live credentials). Unit tests (RBAC negative cases + mock data source) and an E2E flow (Playwright) pass; build and lint clean. `git init` deferred one more step — repo not yet initialized.
+- 2026-09-01 — Rebuilt on Django + PostgreSQL per `_docs/architectural_decisions.md` (ADR-001 through ADR-006): Next.js prototype removed, Django backend (accounts/analytics_mirror/farmers apps) built fresh with the same RBAC contract, 16 backend tests passing. Loaded real Malawi data (~1.3M farmers, ~1.5M journey events, ~1.7M bridge/lineage rows, ~10k SF employees) via a chunked Postgres `COPY` loader — row counts match the Q2 2026 Entities Project Report exactly. Verified end-to-end against real data (search → profile → journey → cross-country RBAC block). **Open and blocking real RBAC**: SuccessFactors department names don't map cleanly to Wimbi's role vocabulary (no "Call Center" or "Data Team" department exists) — needs a decision, not a guess. Reflex frontend not started yet.

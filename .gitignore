@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Django
+db.sqlite3
+staticfiles/
+
+# Env
+.env
+!.env.example
+
+# Reflex
+frontend/.web/
+frontend/*.db
+.states/
+
+# Testing
+/test-results/
+/playwright-report/
+/playwright/.cache/
+node_modules/
+
+# OS
+.DS_Store
+data/raw/*.csv
+!data/raw/.gitkeep

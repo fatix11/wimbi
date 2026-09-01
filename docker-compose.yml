@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: wimbi_db
+    environment:
+      POSTGRES_DB: wimbi
+      POSTGRES_USER: wimbi
+      POSTGRES_PASSWORD: wimbi
+    ports:
+      - "5432:5432"
+    volumes:
+      - wimbi_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wimbi -d wimbi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: wimbi_redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  wimbi_pgdata:

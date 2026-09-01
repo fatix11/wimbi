@@ -121,6 +121,55 @@ The bigger goal this serves: OAF's farmer data is disparate across many systems 
 
 ---
 
+## ADR-006: Real data over mock, ahead of the frontend — RBAC to move to real SuccessFactors identity
+
+**Status:** Accepted (in progress)
+
+**Context:** The Django backend (accounts/analytics_mirror/farmers apps, RBAC, DRF endpoints) was built and fully tested against fixture data seeded by `seed_mock_analytics_mirror` (see ADR-003's "mock first" pattern). Before building the Reflex frontend, the user chose to plug in real data first rather than build the UI against fixtures — both for `analytics_mirror` (real Airbyte-synced Snowflake data) and for identity/RBAC (real SuccessFactors data instead of the 4 hardcoded dev personas in `accounts/dev_users.py`).
+
+**Decisions:**
+1. **RBAC moves from dev personas to real SuccessFactors data**, matching the direction already stated in `business_requirements.md` §7 ("Authorization: derived from SuccessFactors"). The mapping from SF's raw fields (email, country, department, job title) to Wimbi's role vocabulary (`call_center`, `business_ops`, `field_supervisor`, `data_team`) doesn't exist yet — it will be designed collaboratively once a real SF employee extract (matching the shape of the `V_SF_EMPLOYEES`-style sample already seen in `entities-private/samples`) is available to inspect, rather than guessed at now.
+2. **Synthetic non-Malawi farmer rows stay in `analytics_mirror` alongside real synced data.** Real ANALYTICS data is Malawi-only today (per the Q2 report), so the cross-country RBAC negative-path tests (`tests/test_farmers_api.py`) would otherwise lose their only way to prove the country boundary actually blocks something, until more countries are onboarded for real. A couple of fixture Kenya/Rwanda rows are kept deliberately, clearly separable from real data (e.g., by `source_fidelity`/seed-specific IDs).
+3. **Initial real-data sync targets a representative slice, not the full Malawi dataset** (~1.3M farmers, 12.8M+ `FACT_SALE` rows). Full-scale loading is deferred until the app itself is further along — matches the "deal with scale later" posture already accepted in ADR-003.
+
+**Consequences:**
+- `accounts/dev_users.py`'s hardcoded `DEV_USERS` list is temporary scaffolding, not a permanent design — expect it to be replaced by a real identity source (likely its own `analytics_mirror`-style synced table, e.g. `sf_employees`) plus a small role-mapping table/config Wimbi owns.
+- Reflex frontend work is paused until this real data is in place, so the UI is built against something closer to production shape from the start rather than needing a rework pass later.
+
+**Update (2026-09-01) — what actually happened:**
+- The user provided full CSV exports rather than a filtered slice — `client_reach.csv` (1,305,491 rows), `client_journey.csv` (1,538,230 rows), `bridge_client_source_ids.csv` (1,734,921 rows), `successfactors_employees.csv` (10,815 rows). Row counts for the first and third match the Q2 2026 Entities Project Report exactly. Point 3 above (representative slice) didn't happen as planned — loading the full dataset via Postgres `COPY` in chunks (`analytics_mirror/csv_loader.py`) turned out to be fast enough (~6 minutes for ~4.6M rows combined) that slicing wasn't worth the extra complexity. Superseded, not a problem.
+- **Filenames as handed over didn't match their actual content** — `client_reach.csv` actually contained journey/event data and vice versa with `export.csv`; caught by checking real headers before writing any loader code, not by trusting names.
+- **Real schemas differ from what was assumed when the unmanaged models were first drafted**, all now corrected in `analytics_mirror/models.py`:
+  - `V_CLIENT_REACH` has **no phone number column** — Feature 1's "search by name, phone number, or account ID" (`business_requirements.md`) isn't backed by real data for the phone case. Search is name/ID only until a phone-bearing source gets joined in — worth a product conversation, not silently patched over.
+  - `V_CLIENT_JOURNEY`'s only real event types are **Sale / Loan Disbursed / Buyback** — no enrollment, repayment, or tree events exist at this layer (`onboarded_on` on the reach table covers enrollment instead).
+  - `BRIDGE_CLIENT_SOURCE_IDS` has a real `BRIDGE_ID` primary key — better than the `source_client_id`-as-pk guess used before real data was seen.
+  - Real data has genuine gaps that the loader tolerates rather than fails on: some Kobo-sourced farmers have no `full_name`; some SF employee records have no email (skipped, since email is the RBAC lookup key) or duplicate emails across re-orgs (deduped, keeping the most recently updated).
+- **Found and fixed a real schema-isolation bug while wiring this up**: the Postgres connection originally set `search_path=analytics_mirror,public` so the unmanaged mirror models would resolve without schema-qualifying every `db_table`. This backfired — Django's *own* migrations (auth, sessions, admin) also landed inside `analytics_mirror` (unqualified `CREATE TABLE` always targets the first schema on the search path), so a later `DROP SCHEMA analytics_mirror CASCADE` (done to fix the model shape) silently wiped `django_session` and friends along with it. Fixed by schema-qualifying each mirror model's `db_table` directly (`'analytics_mirror"."v_client_reach'` — Postgres accepts this as a valid qualified identifier) and removing the custom `search_path` entirely, so Django's own tables live in the normal default `public` schema, fully decoupled from whatever happens to `analytics_mirror`.
+- **Role-mapping remains genuinely unresolved, on purpose.** The real SF extract has no department literally called "Call Center" or "Data Team" — the closest matches are "Business Operations" (243 people) and "Field Operations" (6,186 people, almost certainly far broader than just supervisors). Rather than guess a mapping for a decision that gates PII access, this is flagged back to the user rather than encoded into `accounts/`.
+
+---
+
+## ADR-007: Consume pre-built REPORTING views for computed metrics; mirror DIMENSIONS directly; only build from raw FACTS for genuinely new cuts
+
+**Status:** Accepted
+
+**Context:** ANALYTICS' `DIMENSIONS`/`FACTS` schemas (`DIM_CLIENT`, `DIM_DATE`, `DIM_PRODUCT`, `DIM_LOCATION`, `DIM_PEOPLE`, `DIM_COUNTRY`, `DIM_SEASON`, `DIM_EXCHANGE_RATE`; `FACT_SALE`/`FACT_LOAN`/`FACT_PAYMENT`/`FACT_PURCHASE`) form a proper star schema — normalized, and a genuinely nice shape to build arbitrary new aggregations against. This raised a real question: for features needing aggregated numbers (program dashboards, FO performance, seasonal cohorts), should Wimbi pull raw dimensions/facts and compute its own joins/`GROUP BY`s in Postgres at query time, rather than mirroring Snowflake's already-built `REPORTING` views?
+
+**Decision:** The deciding question isn't which shape is more elegant (the star schema wins that outright) — it's **whether re-deriving a number independently creates a second, divergence-prone implementation of a metric someone can already see in Superset**. Split accordingly:
+1. **Point-lookup features** (farmer search, profile, journey) — unchanged from ADR-003: mirror the per-entity `REPORTING` views (`V_CLIENT_REACH`, `V_CLIENT_JOURNEY`). Nothing here is a computed aggregate, so there's nothing to diverge on.
+2. **Aggregated/computed features** (Program & Portfolio Dashboards, Seasonal Cohort Funnel, FO Performance, repayment analysis) — consume the matching pre-built `REPORTING` view (`V_PROGRAM_SUMMARY`, `V_FO_PERFORMANCE`, `V_REPAYMENT_ANALYSIS`) rather than recomputing the same aggregation from raw `FACT_*` tables locally.
+3. **DIMENSIONS tables** — mirror these fully and directly regardless of the above. They're small, static reference data (`DIM_DATE` ~11k rows, `DIM_LOCATION` ~2k, `DIM_PEOPLE` ~1.5k, `DIM_COUNTRY` 10, `DIM_SEASON` 171), not computed metrics, so there's no risk of disagreeing with Superset by holding a local copy.
+4. **Raw FACT tables** — pull directly only when building a genuinely new cut that has no existing canonical view or Superset chart to potentially diverge from (e.g., a novel geo/product cross-cut nobody's computed before). If a feature needs a cut close to an existing view but not quite there (like the missing phone number on `V_CLIENT_REACH`), the default should be raising it with the data team as a view change, not silently reimplementing the logic inside Wimbi.
+
+**Rationale:** This directly extends ADR-003's "Wimbi and Superset must never disagree" principle from the freshness layer (nightly/batch sync vs. live query) down to the aggregation layer (whose join/`GROUP BY` logic computes the number). The data team already solved real complexity to get these views right (recursive-SQL performance failures, the Odoo client-filter gap, season-label edge cases, SAP exchange-rate gap-filling) — re-deriving that independently isn't cleaner, it's a second place for the same class of bug to live, this time invisibly out of sync with the original.
+
+**Consequences:**
+- Dashboard-shaped features should default to sourcing from the matching `REPORTING` view, not `FACT_SALE`/`FACT_LOAN`/etc. directly.
+- Geo Explorer (Feature 4) is expected to combine locally-mirrored `DIMENSIONS` (`DIM_LOCATION`'s lat/lon) with transaction-level detail from whichever view/fact already carries it (e.g. `V_SALES_DETAIL`-shaped data) — this is additive/new, not a re-derivation of an existing Superset number, so it doesn't trigger the divergence concern above.
+- `sales_detail.csv` (added 2026-09-01, `V_SALES_DETAIL`-shaped, 5M of 12.78M Malawi `FACT_SALE` rows, 2.6GB) has been inspected but deliberately not loaded — no feature has claimed it yet. It's also a concrete proof point for ADR-003's scaling note (see Appendix).
+
+---
+
 ## Appendix: ANALYTICS reference
 
 Verified against the `entities` repo and the Q2 2026 Entities Project Report (2026-06-21, status Final) — not re-derived from memory. Kept here so the next person (including future-us) doesn't have to re-read the pipeline SQL from scratch.
@@ -133,7 +182,7 @@ Verified against the `entities` repo and the Q2 2026 Entities Project Report (20
 - **FACTS** — `FACT_SALE` (12.78M rows, Malawi — Core/Carbon/Retail via Odoo *and* Trees via Kobo), `FACT_LOAN` (601k, Fineract incl. savings), `FACT_PAYMENT` (4.32M, Fineract ledger only), `FACT_PURCHASE` (1,599, buyback via Sheets). Every fact carries `gl_client_id` + `date_key`.
 - **REPORTING** — 7 views: `V_SALES_DETAIL`, `V_LOAN_PORTFOLIO`, `V_PROGRAM_SUMMARY`, `V_CLIENT_REACH` (the 1.3M-farmer spine), `V_CLIENT_JOURNEY` (what Wimbi builds on), `V_REPAYMENT_ANALYSIS`, `V_FO_PERFORMANCE`.
 
-**Scale (Malawi only, Q2 2026):** 2,818,673 raw records → 1,734,921 after within-source dedup → **1,305,491 unique farmers**. A full 10-country rollout is expected to push some fact tables well past 100M rows (see ADR-003's scaling note).
+**Scale (Malawi only, Q2 2026):** 2,818,673 raw records → 1,734,921 after within-source dedup → **1,305,491 unique farmers**. A full 10-country rollout is expected to push some fact tables well past 100M rows (see ADR-003's scaling note). Concrete proof point (2026-09-01): a 5,000,000-row (of 12,776,927 total Malawi) extract of `V_SALES_DETAIL` alone is 2.6GB as CSV — the full Malawi table would be ~6.7GB, one country, one fact table.
 
 **Known upstream gaps that will surface in Wimbi's UI:**
 - 67,965 Odoo clients (0.5% of `FACT_SALE`) have no `gl_client_id` yet — a filtered `ODOO_CLIENTS` source table excludes some `res_partner` records; fix identified, deferred to Q3.
