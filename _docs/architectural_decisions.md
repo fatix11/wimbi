@@ -182,15 +182,15 @@ The bigger goal this serves: OAF's farmer data is disparate across many systems 
 
 1. **Feature access (permissions)** — via Django's real `auth.Group`/`auth.Permission` system, not custom code. Each persona (Business Ops, Program Executive, Field Supervisor, Field Officer, Data Team, Business/Program User, Call Center, Gamma) is a `Group`; feature gates check `user.has_perm(...)` or group membership.
 2. **Data access (row-level country scope)** — stays the lightweight attribute-based scoping already built, but decoupled from group/persona identity. Stored per-user (a new `WimbiProfile.country_scope`, ISO code or `"ALL"`), resolved from the employee's own `SFEmployee.country_code` by default, or overridden to `"ALL"` per-rule (see below) for roles that need it — currently only Data Team.
-3. **Admin/trust tier** — never auto-derived. A new `RoleAssignmentRule.clean()` guardrail makes it structurally impossible for any rule to target the "Admin" group; admin membership is only ever added by a human directly in Django admin, and the sync command only ever touches groups that appear as a rule target (or the Gamma fallback) — so it can never see, and never touches, Admin membership.
+3. **Admin/trust tier** — never auto-derived. An `m2m_changed` signal on `RoleAssignmentRule.groups` guardrails it structurally impossible for any rule to be given the "Admin" group (fires regardless of whether the M2M is populated via the admin UI, a migration, or a shell — not just a `clean()` that only fires on some entry points); admin membership is only ever added by a human directly in Django admin, and the sync command only ever touches groups that appear as a rule target (or the Gamma fallback) — so it can never see, and never touches, Admin membership.
 
-**The mapping itself is data, not code**: a new `accounts.RoleAssignmentRule` model (`department_name`, `work_location_operator` [ANY/EQUALS/NOT_EQUALS], `work_location_value`, target `group`, `country_scope_override`, `priority`), editable via Django admin — the actual "elastic role assignment module" asked for. A management command (`assign_roles`) walks every `SFEmployee`, evaluates the rule table (first match wins, ordered by `priority`), creates/updates a Django `User` + `WimbiProfile`, and sets group membership — touching only groups the rule table owns, so a manually-granted Admin membership survives every re-run. Employees matching no rule fall back to a baseline **Gamma** group (name borrowed deliberately from Superset's own minimal-access tier — same vocabulary, immediately recognizable).
+**The mapping itself is data, not code**: a new `accounts.RoleAssignmentRule` model (`department_name`, `work_location_operator` [ANY/EQUALS/NOT_EQUALS], `work_location_value`, target `groups` [**M2M — a rule can grant more than one group**], `country_scope_override`, `priority`), editable via Django admin — the actual "elastic role assignment module" asked for. A management command (`assign_roles`) walks every `SFEmployee`, evaluates the rule table (first match wins, ordered by `priority`), creates/updates a Django `User` + `WimbiProfile`, and sets group membership — touching only groups the rule table owns, so a manually-granted Admin membership survives every re-run. Employees matching no rule fall back to a baseline **Gamma** group (name borrowed deliberately from Superset's own minimal-access tier — same vocabulary, immediately recognizable).
 
-**Initial mapping** (source: user-provided SF department breakdown, 2026-09-01):
+**Initial mapping** (source: user-provided SF department breakdown, 2026-09-01; revised 2026-09-02 once the user learned Call Center staff sit inside "Business Operations" with no field yet to distinguish them):
 
-| Department | → Group | Country scope |
+| Department | → Group(s) | Country scope |
 |---|---|---|
-| Business Operations | Business Ops | own country |
+| Business Operations | **Business Ops *and* Call Center** | own country |
 | Executive Team | Program Executive | own country |
 | Field Operations, `WorkLocation = "Field"` | Field Officer | own country |
 | Field Operations, `WorkLocation != "Field"` | Field Supervisor | own country |
@@ -199,7 +199,7 @@ The bigger goal this serves: OAF's farmer data is disparate across many systems 
 | Market Acces / Rural Retail / Trees / Monitoring, Eval & Learning / Payment for Ecosystem Services | Business/Program User | own country |
 | *(everything else)* | Gamma (fallback) | own country |
 
-**Known gap, not silently resolved:** no department in the current SF extract maps to **Call Center** — flagged back to the user rather than guessed at; that group exists but has no rule yet.
+**Resolved (2026-09-02):** Business Operations grants *both* the Business Ops and Call Center groups, rather than leaving Call Center permanently empty — the user's call, made explicitly rather than guessed at, once it became clear the SF extract has no field to split the two personas apart yet (verified: both groups now have identical 241-person membership). `RoleAssignmentRule.group` (a single FK) became `RoleAssignmentRule.groups` (M2M) to support this — a rule can now grant more than one persona's access when the source data can't yet distinguish them. Revisit the split once a distinguishing field (e.g. JobTitle) becomes available.
 
 **Consequences:**
 - `accounts/dev_users.py`'s 4 hardcoded personas are **not removed yet** — they remain the only path for personas with no real SF mapping today (Call Center) and stay useful for local dev/testing regardless. Real SF-backed users (via `assign_roles`) and dev personas coexist; wiring the actual login/session flow to prefer real users is a deliberate follow-up, not done in this pass.

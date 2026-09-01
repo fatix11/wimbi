@@ -9,13 +9,18 @@ class RoleAssignmentRuleAdmin(admin.ModelAdmin):
         "department_name",
         "work_location_operator",
         "work_location_value",
-        "group",
+        "group_names",
         "country_scope_override",
         "priority",
     ]
-    list_filter = ["group", "work_location_operator"]
+    list_filter = ["groups", "work_location_operator"]
     search_fields = ["department_name", "notes"]
+    filter_horizontal = ["groups"]
     ordering = ["priority", "id"]
+
+    @admin.display(description="Groups")
+    def group_names(self, obj):
+        return ", ".join(obj.groups.values_list("name", flat=True))
 
 
 @admin.register(WimbiProfile)

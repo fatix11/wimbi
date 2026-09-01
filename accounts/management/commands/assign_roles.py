@@ -1,5 +1,5 @@
 """
-Walks every SFEmployee, resolves a (Group, country_scope) via
+Walks every SFEmployee, resolves (groups, country_scope) via
 RoleAssignmentRule (see accounts/role_assignment.py, ADR-008), and syncs a
 real Django User + WimbiProfile accordingly.
 
@@ -29,7 +29,7 @@ class Command(BaseCommand):
         assigned = 0
         with transaction.atomic():
             for employee in SFEmployee.objects.all():
-                group, scope = resolve_role(employee)
+                groups, scope = resolve_role(employee)
 
                 user, _ = User.objects.get_or_create(
                     username=employee.email, defaults={"email": employee.email}
@@ -37,7 +37,7 @@ class Command(BaseCommand):
 
                 still_owned = user.groups.filter(id__in=owned_group_ids)
                 user.groups.remove(*still_owned)
-                user.groups.add(group)
+                user.groups.add(*groups)
 
                 WimbiProfile.objects.update_or_create(
                     user=user, defaults={"country_scope": scope, "sf_email": employee.email}

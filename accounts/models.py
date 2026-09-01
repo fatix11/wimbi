@@ -7,6 +7,8 @@ code deploy needed when OAF renames or adds a department.
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.signals import m2m_changed
+from django.dispatch import receiver
 
 ADMIN_GROUP_NAME = "Admin"
 GAMMA_GROUP_NAME = "Gamma"
@@ -21,12 +23,17 @@ class WorkLocationOperator(models.TextChoices):
 class RoleAssignmentRule(models.Model):
     """
     One row = one condition mapping an SF department (optionally further
-    split by work location) to a Group and a data-access country scope.
-    Evaluated in `priority` order, first match wins; see
+    split by work location) to a *set* of Groups (a department can cover
+    more than one persona when the source data can't distinguish them —
+    e.g. Business Operations covers both Business Ops and Call Center
+    staff, with no field yet to tell them apart) and a data-access country
+    scope. Evaluated in `priority` order, first match wins; see
     accounts/role_assignment.py's resolve_role().
 
-    "Admin" can never be a rule target (see clean()) — admin-tier access
-    is a deliberate, manually-granted trust decision, never something a
+    "Admin" can never be a rule target (enforced by the m2m_changed
+    receiver below, which fires regardless of whether groups are set via
+    the admin UI, a migration, or a shell) — admin-tier access is a
+    deliberate, manually-granted trust decision, never something a
     department mapping should be able to hand out on its own.
     """
 
@@ -37,8 +44,8 @@ class RoleAssignmentRule(models.Model):
         default=WorkLocationOperator.ANY,
     )
     work_location_value = models.CharField(max_length=128, blank=True)
-    group = models.ForeignKey(
-        "auth.Group", on_delete=models.PROTECT, related_name="role_assignment_rules"
+    groups = models.ManyToManyField(
+        "auth.Group", related_name="role_assignment_rules"
     )
     country_scope_override = models.CharField(
         max_length=8,
@@ -52,12 +59,6 @@ class RoleAssignmentRule(models.Model):
 
     class Meta:
         ordering = ["priority", "id"]
-
-    def clean(self):
-        if self.group_id and self.group.name == ADMIN_GROUP_NAME:
-            raise ValidationError(
-                f'The "{ADMIN_GROUP_NAME}" group can never be assigned by a role rule — grant it manually.'
-            )
 
     def matches(self, employee) -> bool:
         if employee.department_name != self.department_name:
@@ -73,7 +74,22 @@ class RoleAssignmentRule(models.Model):
         if self.work_location_operator != WorkLocationOperator.ANY:
             op = "=" if self.work_location_operator == WorkLocationOperator.EQUALS else "!="
             location = f" (WorkLocation {op} {self.work_location_value!r})"
-        return f"{self.department_name}{location} -> {self.group.name}"
+        group_names = ", ".join(self.groups.values_list("name", flat=True)) if self.pk else ""
+        return f"{self.department_name}{location} -> {group_names}"
+
+
+@receiver(m2m_changed, sender=RoleAssignmentRule.groups.through)
+def _reject_admin_group_on_rule(sender, instance, action, pk_set, **kwargs):
+    """Guardrail for the concern ADR-008 exists to address: no
+    RoleAssignmentRule may ever grant "Admin", no matter how the M2M is
+    populated (admin UI, shell, migration)."""
+    if action != "pre_add" or not pk_set:
+        return
+    Group = instance.groups.model
+    if Group.objects.filter(pk__in=pk_set, name=ADMIN_GROUP_NAME).exists():
+        raise ValidationError(
+            f'The "{ADMIN_GROUP_NAME}" group can never be assigned by a role rule — grant it manually.'
+        )
 
 
 class WimbiProfile(models.Model):
