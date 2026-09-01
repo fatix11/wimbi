@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from django.db import connection
 
-from .models import BridgeClientSourceId, FarmerReach, JourneyEvent, SFEmployee
+from .models import BridgeClientSourceId, FarmerReach, JourneyEvent, SalesLine, SFEmployee
 
 FARMERS = [
     dict(gl_client_id="GL-MW-00001", full_name="Grace Banda", country_code="MW",
@@ -50,6 +50,17 @@ JOURNEY_EVENTS = [
          program="Core", amount_lcy=Decimal("15000"), currency_code="KES"),
 ]
 
+SALES_LINES = [
+    dict(gl_client_id="GL-MW-00001", sale_date=date(2023, 6, 20), product_name="Hybrid Maize Seed",
+         product_category="Seed", quantity=Decimal("10"), unit_price_lcy=Decimal("1200"),
+         total_price_lcy=Decimal("12000"), currency_code="MWK", site="Lilongwe", district="Lilongwe",
+         field_officer="Blessings Gondwe", derived_season="LR23"),
+    dict(gl_client_id="GL-MW-00004", sale_date=date(2023, 6, 5), product_name="Albizia Lebbeck",
+         product_category="Tubes", quantity=Decimal("50"), unit_price_lcy=Decimal("370"),
+         total_price_lcy=Decimal("18500"), currency_code="MWK", site="Zomba", district="Zomba",
+         field_officer="Blessings Gondwe", derived_season="LR23"),
+]
+
 # (model, plain unqualified table name) — the plain name is needed
 # separately because Meta.db_table is now schema-qualified
 # ('analytics_mirror"."v_client_reach'), which Django's own table
@@ -58,6 +69,7 @@ MIRROR_MODELS = (
     (FarmerReach, "v_client_reach"),
     (JourneyEvent, "v_client_journey"),
     (BridgeClientSourceId, "bridge_client_source_ids"),
+    (SalesLine, "sales_line"),
     (SFEmployee, "sf_employees"),
 )
 MIRROR_SCHEMA = "analytics_mirror"
@@ -92,6 +104,10 @@ def seed():
     JourneyEvent.objects.filter(source_ref__startswith="SEED-").delete()
     for i, row in enumerate(JOURNEY_EVENTS):
         JourneyEvent.objects.create(source_ref=f"SEED-{i}", **row)
+
+    SalesLine.objects.filter(source_transaction_id__startswith="SEED-").delete()
+    for i, row in enumerate(SALES_LINES):
+        SalesLine.objects.create(source_transaction_id=f"SEED-{i}", **row)
 
     for i, farmer in enumerate(FARMERS):
         BridgeClientSourceId.objects.update_or_create(

@@ -7,7 +7,7 @@ data there's no reason to run this anymore.
 
 from django.core.management.base import BaseCommand
 
-from analytics_mirror.seed_data import FARMERS, JOURNEY_EVENTS, ensure_tables_exist, seed
+from analytics_mirror.seed_data import FARMERS, JOURNEY_EVENTS, SALES_LINES, ensure_tables_exist, seed
 
 
 class Command(BaseCommand):
@@ -18,5 +18,5 @@ class Command(BaseCommand):
         seed()
         self.stdout.write(self.style.SUCCESS(
             f"Seeded {len(FARMERS)} farmers, {len(JOURNEY_EVENTS)} journey events, "
-            f"{len(FARMERS)} bridge rows."
+            f"{len(SALES_LINES)} sales lines, {len(FARMERS)} bridge rows."
         ))

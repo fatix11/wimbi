@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:17
     container_name: wimbi_db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: wimbi
       POSTGRES_USER: wimbi
@@ -20,6 +21,7 @@ services:
   redis:
     image: redis:7
     container_name: wimbi_redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
 

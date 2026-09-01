@@ -5,7 +5,7 @@ from rest_framework.response import Response
 
 from accounts.rbac import can_access_farmer, scope_farmers
 from accounts.session import get_session_user
-from analytics_mirror.models import FarmerReach, JourneyEvent
+from analytics_mirror.models import FarmerReach, JourneyEvent, SalesLine
 
 
 def _serialize_farmer(farmer: FarmerReach) -> dict:
@@ -34,6 +34,41 @@ def _serialize_event(event: JourneyEvent) -> dict:
     }
 
 
+def _serialize_sales_line(line: SalesLine) -> dict:
+    return {
+        "id": line.pk,
+        "glClientId": line.gl_client_id,
+        "date": line.sale_date,
+        "productName": line.product_name,
+        "productCategory": line.product_category,
+        "quantity": line.quantity,
+        "unitPriceLcy": line.unit_price_lcy,
+        "totalPriceLcy": line.total_price_lcy,
+        "currency": line.currency_code,
+        "site": line.site,
+        "district": line.district,
+        "fieldOfficer": line.field_officer,
+        "season": line.derived_season or line.season,
+    }
+
+
+def _get_authorized_farmer(request: Request, gl_client_id: str) -> tuple[FarmerReach | None, Response | None]:
+    """Shared guard for every farmer-scoped endpoint: resolves the session
+    user and the farmer, and returns an error Response if either auth or
+    RBAC fails — callers just return it as-is when non-None."""
+    user = get_session_user(request._request)
+    if user is None:
+        return None, Response({"error": "Unauthorized"}, status=401)
+
+    farmer = FarmerReach.objects.filter(gl_client_id=gl_client_id).first()
+    if farmer is None:
+        return None, Response({"error": "Not found"}, status=404)
+    if not can_access_farmer(user, farmer):
+        return None, Response({"error": "Forbidden"}, status=403)
+
+    return farmer, None
+
+
 @api_view(["GET"])
 def search_farmers(request: Request) -> Response:
     user = get_session_user(request._request)
@@ -55,30 +90,27 @@ def search_farmers(request: Request) -> Response:
 
 @api_view(["GET"])
 def get_farmer(request: Request, gl_client_id: str) -> Response:
-    user = get_session_user(request._request)
-    if user is None:
-        return Response({"error": "Unauthorized"}, status=401)
-
-    farmer = FarmerReach.objects.filter(gl_client_id=gl_client_id).first()
-    if farmer is None:
-        return Response({"error": "Not found"}, status=404)
-    if not can_access_farmer(user, farmer):
-        return Response({"error": "Forbidden"}, status=403)
-
+    farmer, error = _get_authorized_farmer(request, gl_client_id)
+    if error:
+        return error
     return Response(_serialize_farmer(farmer))
 
 
 @api_view(["GET"])
 def get_journey(request: Request, gl_client_id: str) -> Response:
-    user = get_session_user(request._request)
-    if user is None:
-        return Response({"error": "Unauthorized"}, status=401)
+    farmer, error = _get_authorized_farmer(request, gl_client_id)
+    if error:
+        return error
 
-    farmer = FarmerReach.objects.filter(gl_client_id=gl_client_id).first()
-    if farmer is None:
-        return Response({"error": "Not found"}, status=404)
-    if not can_access_farmer(user, farmer):
-        return Response({"error": "Forbidden"}, status=403)
-
-    events = JourneyEvent.objects.filter(gl_client_id=gl_client_id).order_by("event_date")
+    events = JourneyEvent.objects.filter(gl_client_id=farmer.gl_client_id).order_by("event_date")
     return Response([_serialize_event(e) for e in events])
+
+
+@api_view(["GET"])
+def get_sales(request: Request, gl_client_id: str) -> Response:
+    farmer, error = _get_authorized_farmer(request, gl_client_id)
+    if error:
+        return error
+
+    lines = SalesLine.objects.filter(gl_client_id=farmer.gl_client_id).order_by("sale_date")
+    return Response([_serialize_sales_line(line) for line in lines])

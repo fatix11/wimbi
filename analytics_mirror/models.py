@@ -118,6 +118,87 @@ class BridgeClientSourceId(models.Model):
         db_table = 'analytics_mirror"."bridge_client_source_ids'
 
 
+class SalesLine(models.Model):
+    """
+    Mirrors V_SALES_DETAIL (verified against a real 5M-row/12.78M Malawi
+    extract, 2026-09-01 — see ADR-007). Line-item grain, not client grain:
+    a farmer's single "Sale" journey event (from V_CLIENT_JOURNEY) can
+    correspond to several SalesLine rows (one per product on the order),
+    so this is deliberately its own model, not a 1:1 join onto JourneyEvent.
+    Enriches the Journey Timeline with product/quantity/field-officer/exact
+    location detail that V_CLIENT_JOURNEY doesn't carry.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    gl_client_id = models.CharField(max_length=32, db_index=True)
+    client_name = models.CharField(max_length=255, null=True)
+    gender = models.CharField(max_length=1, null=True)
+    client_primary_program = models.CharField(max_length=64, null=True)
+
+    sale_date = models.DateField(null=True)
+    sale_year = models.IntegerField(null=True)
+    sale_quarter = models.CharField(max_length=8, null=True)
+    sale_month = models.CharField(max_length=16, null=True)
+    year_month = models.CharField(max_length=8, null=True)
+    season = models.CharField(max_length=32, null=True)
+    derived_season = models.CharField(max_length=32, null=True)
+
+    country_code = models.CharField(max_length=8, null=True)
+    region = models.CharField(max_length=128, null=True)
+    district = models.CharField(max_length=128, null=True)
+    sector = models.CharField(max_length=128, null=True)
+    site = models.CharField(max_length=255, null=True)
+    loc_type = models.CharField(max_length=32, null=True)
+    latitude = models.FloatField(null=True)
+    longitude = models.FloatField(null=True)
+    loc_parents = models.CharField(max_length=255, null=True)
+
+    program = models.CharField(max_length=64, null=True)
+    source_system = models.CharField(max_length=32, null=True)
+    sale_channel = models.CharField(max_length=64, null=True)
+    order_type = models.CharField(max_length=64, null=True)
+    payment_type = models.CharField(max_length=64, null=True)
+    is_credit = models.BooleanField(null=True)
+    fulfillment_status = models.CharField(max_length=32, null=True)
+
+    product_name = models.CharField(max_length=255, null=True)
+    product_category = models.CharField(max_length=128, null=True)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+
+    field_officer = models.CharField(max_length=255, null=True)
+    shopkeeper = models.CharField(max_length=255, null=True)
+    nursery_manager = models.CharField(max_length=255, null=True)
+
+    unit_price_lcy = models.DecimalField(max_digits=16, decimal_places=2, null=True)
+    total_price_lcy = models.DecimalField(max_digits=16, decimal_places=2, null=True)
+    total_order_price_lcy = models.DecimalField(max_digits=16, decimal_places=2, null=True)
+    total_price_usd = models.DecimalField(max_digits=16, decimal_places=2, null=True)
+    currency_code = models.CharField(max_length=8, null=True)
+    usd_rate = models.DecimalField(max_digits=12, decimal_places=6, null=True)
+    sap_usd_rate = models.DecimalField(max_digits=12, decimal_places=6, null=True)
+    rate_exact_match = models.BooleanField(null=True)
+    revenue_lcy = models.DecimalField(max_digits=16, decimal_places=2, null=True)
+    revenue_usd = models.DecimalField(max_digits=16, decimal_places=2, null=True)
+
+    location_key = models.CharField(max_length=64, null=True)
+    product_key = models.CharField(max_length=64, null=True)
+    field_officer_key = models.CharField(max_length=64, null=True)
+    shopkeeper_key = models.CharField(max_length=64, null=True)
+    nursery_mgr_key = models.CharField(max_length=64, null=True)
+
+    source_transaction_id = models.CharField(max_length=64, null=True)
+    source_order_id = models.CharField(max_length=64, null=True)
+    source_loan_id = models.CharField(max_length=64, null=True)
+
+    created_at = models.DateTimeField(null=True)
+    fulfilled_at = models.DateTimeField(null=True)
+    loaded_at = models.DateTimeField(null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'analytics_mirror"."sales_line'
+
+
 class SFEmployee(models.Model):
     """
     Loaded from a SuccessFactors extract (see ADR-006) — role-to-department

@@ -38,9 +38,21 @@ def load_csv(
     )
     required = required or []
 
+    def flush(buf: io.StringIO) -> None:
+        # A fresh cursor per chunk, not one held open across the whole
+        # file — reusing a single cursor across ~100 copy_expert calls on
+        # a wide table (55 columns) was observed to grow this process's
+        # memory until a MemoryError around row 950k on sales_line. Root
+        # cause not fully pinned down (the source file itself is clean —
+        # verified separately), but a cursor per chunk is cheap and made
+        # the same load complete cleanly.
+        buf.seek(0)
+        with connection.cursor() as cursor:
+            cursor.copy_expert(copy_sql, buf)
+
     total = 0
     skipped = 0
-    with open(csv_path, newline="", encoding="utf-8-sig") as f, connection.cursor() as cursor:
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         buf = io.StringIO()
         writer = csv.writer(buf)
@@ -62,8 +74,7 @@ def load_csv(
             total += 1
 
             if buffered >= chunk_size:
-                buf.seek(0)
-                cursor.copy_expert(copy_sql, buf)
+                flush(buf)
                 buf = io.StringIO()
                 writer = csv.writer(buf)
                 buffered = 0
@@ -71,7 +82,6 @@ def load_csv(
                     stdout.write(f"  ...{total:,} rows loaded into {table}")
 
         if buffered:
-            buf.seek(0)
-            cursor.copy_expert(copy_sql, buf)
+            flush(buf)
 
     return total, skipped

@@ -8,7 +8,7 @@ Malawi-only and shares the same tables. Re-run `seed_mock_analytics_mirror`
 update_or_create / a source_ref prefix, so it won't disturb real rows).
 
 Usage:
-    python manage.py load_csv_snapshot                 # loads all four
+    python manage.py load_csv_snapshot                 # loads all five
     python manage.py load_csv_snapshot client_reach     # loads just one
     python manage.py seed_mock_analytics_mirror         # then, re-add KE/RW fixtures
 """
@@ -132,6 +132,73 @@ DATASETS = {
             ColumnSpec("LastUpdatedDate", "last_updated_date"),
         ],
     ),
+    "sales_detail": dict(
+        csv_path=DATA_RAW / "sales_detail.csv",
+        table="sales_line",
+        required=["GL_CLIENT_ID"],
+        # Smaller chunks than the default — this table is 55 columns wide
+        # (vs. ~13 for the others) and a prior full run at the default
+        # chunk_size crashed Docker Desktop's WSL2 VM out of memory around
+        # row 950k. Lower peak memory per COPY batch as a pragmatic
+        # mitigation; see csv_loader.py's cursor-per-chunk fix too.
+        chunk_size=10_000,
+        columns=[
+            ColumnSpec("GL_CLIENT_ID", "gl_client_id"),
+            ColumnSpec("CLIENT_NAME", "client_name"),
+            ColumnSpec("GENDER", "gender"),
+            ColumnSpec("CLIENT_PRIMARY_PROGRAM", "client_primary_program"),
+            ColumnSpec("SALE_DATE", "sale_date"),
+            ColumnSpec("SALE_YEAR", "sale_year"),
+            ColumnSpec("SALE_QUARTER", "sale_quarter"),
+            ColumnSpec("SALE_MONTH", "sale_month"),
+            ColumnSpec("YEAR_MONTH", "year_month"),
+            ColumnSpec("SEASON", "season"),
+            ColumnSpec("DERIVED_SEASON", "derived_season"),
+            ColumnSpec("COUNTRY", "country_code", to_iso),
+            ColumnSpec("REGION", "region"),
+            ColumnSpec("DISTRICT", "district"),
+            ColumnSpec("SECTOR", "sector"),
+            ColumnSpec("SITE", "site"),
+            ColumnSpec("LOC_TYPE", "loc_type"),
+            ColumnSpec("LATITUDE", "latitude"),
+            ColumnSpec("LONGITUDE", "longitude"),
+            ColumnSpec("LOC_PARENTS", "loc_parents"),
+            ColumnSpec("PROGRAM", "program"),
+            ColumnSpec("SOURCE_SYSTEM", "source_system"),
+            ColumnSpec("SALE_CHANNEL", "sale_channel"),
+            ColumnSpec("ORDER_TYPE", "order_type"),
+            ColumnSpec("PAYMENT_TYPE", "payment_type"),
+            ColumnSpec("IS_CREDIT", "is_credit"),
+            ColumnSpec("FULFILLMENT_STATUS", "fulfillment_status"),
+            ColumnSpec("PRODUCT_NAME", "product_name"),
+            ColumnSpec("PRODUCT_CATEGORY", "product_category"),
+            ColumnSpec("QUANTITY", "quantity"),
+            ColumnSpec("FIELD_OFFICER", "field_officer"),
+            ColumnSpec("SHOPKEEPER", "shopkeeper"),
+            ColumnSpec("NURSERY_MANAGER", "nursery_manager"),
+            ColumnSpec("UNIT_PRICE_LCY", "unit_price_lcy"),
+            ColumnSpec("TOTAL_PRICE_LCY", "total_price_lcy"),
+            ColumnSpec("TOTAL_ORDER_PRICE_LCY", "total_order_price_lcy"),
+            ColumnSpec("TOTAL_PRICE_USD", "total_price_usd"),
+            ColumnSpec("CURRENCY_CODE", "currency_code"),
+            ColumnSpec("USD_RATE", "usd_rate"),
+            ColumnSpec("SAP_USD_RATE", "sap_usd_rate"),
+            ColumnSpec("RATE_EXACT_MATCH", "rate_exact_match"),
+            ColumnSpec("REVENUE_LCY", "revenue_lcy"),
+            ColumnSpec("REVENUE_USD", "revenue_usd"),
+            ColumnSpec("LOCATION_KEY", "location_key"),
+            ColumnSpec("PRODUCT_KEY", "product_key"),
+            ColumnSpec("FIELD_OFFICER_KEY", "field_officer_key"),
+            ColumnSpec("SHOPKEEPER_KEY", "shopkeeper_key"),
+            ColumnSpec("NURSERY_MGR_KEY", "nursery_mgr_key"),
+            ColumnSpec("SOURCE_TRANSACTION_ID", "source_transaction_id"),
+            ColumnSpec("SOURCE_ORDER_ID", "source_order_id"),
+            ColumnSpec("SOURCE_LOAN_ID", "source_loan_id"),
+            ColumnSpec("CREATED_AT", "created_at"),
+            ColumnSpec("FULFILLED_AT", "fulfilled_at"),
+            ColumnSpec("LOADED_AT", "loaded_at"),
+        ],
+    ),
 }
 
 
@@ -168,7 +235,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "dataset", nargs="?", choices=list(DATASETS), default=None,
-            help="Load just this dataset; omit to load all four.",
+            help="Load just this dataset; omit to load all five.",
         )
 
     def handle(self, *args, **options):
@@ -194,10 +261,12 @@ class Command(BaseCommand):
                 temp_path = _dedupe_csv(source_path, spec["dedupe_key"], spec["dedupe_order_by"])
                 source_path = temp_path
 
+            load_kwargs = {"chunk_size": spec["chunk_size"]} if "chunk_size" in spec else {}
             try:
                 count, skipped = load_csv(
                     source_path, spec["table"], spec["columns"],
                     required=spec.get("required"), stdout=self.stdout,
+                    **load_kwargs,
                 )
             finally:
                 if temp_path:

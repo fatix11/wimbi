@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BridgeClientSourceId, FarmerReach, JourneyEvent, SFEmployee
+from .models import BridgeClientSourceId, FarmerReach, JourneyEvent, SalesLine, SFEmployee
 
 
 @admin.register(FarmerReach)
@@ -22,6 +22,13 @@ class BridgeClientSourceIdAdmin(admin.ModelAdmin):
     list_display = ["gl_client_id", "source_system", "source_client_id", "match_method"]
     list_filter = ["source_system", "match_method"]
     search_fields = ["gl_client_id", "source_client_id"]
+
+
+@admin.register(SalesLine)
+class SalesLineAdmin(admin.ModelAdmin):
+    list_display = ["gl_client_id", "sale_date", "product_name", "quantity", "total_price_lcy", "site"]
+    list_filter = ["product_category", "derived_season"]
+    search_fields = ["gl_client_id", "client_name", "product_name"]
 
 
 @admin.register(SFEmployee)
