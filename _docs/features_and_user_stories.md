@@ -12,27 +12,27 @@ Personas: **CC** = Call center officer · **BO** = Business ops officer · **FS*
 
 ## Feature × Persona Map
 
-| Feature area | CC | BO | FS | PE | FO | DT | BU |
-|---|---|---|---|---|---|---|---|
-| 1. Farmer Search & Profile | ✔ | ✔ | ✔ | | ✔ | ✔ | |
-| 2. Farmer Journey Timeline | ✔ | ✔ | | | ✔ | ✔ | |
-| 3. Identity & Match Confidence | ✔ | | | | | ✔ | |
-| 4. Geo Explorer | | | ✔ | ✔ | ✔ | ✔ | |
-| 5. Program & Portfolio Dashboards | | | ✔ | ✔ | | ✔ | |
-| 6. Seasonal Cohort Funnel | | | ✔ | ✔ | | ✔ | |
-| 7. Payments & Reconciliation Workspace | | ✔ | | | | ✔ | |
-| 8. Case & Escalation Handling | ✔ | ✔ | ✔ | | | ✔ | |
-| 9. Data Quality & Anomaly Feed | | | | | | ✔ | |
-| 10. Remediation / Two-Way Edit (future) | | ✔ | | | | ✔ | |
-| 11. Conversational AI Assistant (in-app Q&A) | ✔ | ✔ | ✔ | ✔ | | ✔ | |
-| 12. Notifications & Alerts | ✔ | ✔ | ✔ | ✔ | | | |
-| 13. Admin & Access Management | | | | | | ✔ | |
-| 14. Audit Trail / Activity Log | | | | | | ✔ | |
-| 15. Export & Reporting | | ✔ | ✔ | ✔ | | ✔ | |
-| 16. Country/Program Switcher | | | ✔ | ✔ | | ✔ | |
-| 17. Field Officer Mode (parked) | | | | | ✔ | | |
-| 18. Self-Service Bulk Data Mapper | | | | | | ✔ | ✔ |
-| 19. AI-Assisted Superset Chart/Dashboard Builder | | ✔ | ✔ | ✔ | | ✔ | ✔ |
+| Feature area                                     | CC  | BO  | FS  | PE  | FO  | DT  | BU  |
+| ------------------------------------------------ | --- | --- | --- | --- | --- | --- | --- |
+| 1. Farmer Search & Profile                       | ✔   | ✔   | ✔   |     | ✔   | ✔   |     |
+| 2. Farmer Journey Timeline                       | ✔   | ✔   |     |     | ✔   | ✔   |     |
+| 3. Identity & Match Confidence                   | ✔   |     |     |     |     | ✔   |     |
+| 4. Geo Explorer                                  |     |     | ✔   | ✔   | ✔   | ✔   |     |
+| 5. Program & Portfolio Dashboards                |     |     | ✔   | ✔   |     | ✔   |     |
+| 6. Seasonal Cohort Funnel                        |     |     | ✔   | ✔   |     | ✔   |     |
+| 7. Payments & Reconciliation Workspace           |     | ✔   |     |     |     | ✔   |     |
+| 8. Case & Escalation Handling                    | ✔   | ✔   | ✔   |     |     | ✔   |     |
+| 9. Data Quality & Anomaly Feed                   |     |     |     |     |     | ✔   |     |
+| 10. Remediation / Two-Way Edit (future)          |     | ✔   |     |     |     | ✔   |     |
+| 11. Conversational AI Assistant (in-app Q&A)     | ✔   | ✔   | ✔   | ✔   |     | ✔   |     |
+| 12. Notifications & Alerts                       | ✔   | ✔   | ✔   | ✔   |     |     |     |
+| 13. Admin & Access Management                    |     |     |     |     |     | ✔   |     |
+| 14. Audit Trail / Activity Log                   |     |     |     |     |     | ✔   |     |
+| 15. Export & Reporting                           |     | ✔   | ✔   | ✔   |     | ✔   |     |
+| 16. Country/Program Switcher                     |     |     | ✔   | ✔   |     | ✔   |     |
+| 17. Field Officer Mode (parked)                  |     |     |     |     | ✔   |     |     |
+| 18. Self-Service Bulk Data Mapper                |     |     |     |     |     | ✔   | ✔   |
+| 19. AI-Assisted Superset Chart/Dashboard Builder |     | ✔   | ✔   | ✔   |     | ✔   | ✔   |
 
 Features 18–19 are adjacent data-platform capabilities, not farmer-profile consumption features — see Part B below.
 
