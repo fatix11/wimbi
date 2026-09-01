@@ -2,6 +2,10 @@
 The real ANALYTICS extracts spell countries out in full (COUNTRY="Malawi"),
 while Wimbi's RBAC and DIM_COUNTRY both key off ISO-2 codes. Small, explicit
 mapping rather than guessing — extend as more countries' data lands.
+
+Also covers non-standard values seen in the real SuccessFactors extract's
+CountryCode field (e.g. "RW-TBR" — a Rwanda/Tubura sub-entity code, "ETH" —
+3-letter instead of ISO-2) — same lookup, same reasoning.
 """
 
 _NAME_TO_ISO = {
@@ -17,6 +21,9 @@ _NAME_TO_ISO = {
     "drc": "CD",
     "burundi": "BI",
     "ghana": "GH",
+    # SuccessFactors CountryCode quirks (verified 2026-09-01)
+    "rw-tbr": "RW",
+    "eth": "ET",
 }
 
 

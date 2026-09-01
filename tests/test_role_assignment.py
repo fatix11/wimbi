@@ -1,0 +1,104 @@
+import pytest
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
+
+from accounts.management.commands.assign_roles import Command as AssignRolesCommand
+from accounts.models import ADMIN_GROUP_NAME, RoleAssignmentRule
+from accounts.role_assignment import resolve_role
+from analytics_mirror.models import SFEmployee
+
+User = get_user_model()
+
+
+def make_employee(**kwargs):
+    defaults = dict(
+        email="test@oneacrefund.org",
+        full_name="Test Employee",
+        department_name="Unmapped Department",
+        work_location="Office",
+        country_code="MW",
+        is_active=True,
+    )
+    defaults.update(kwargs)
+    return SFEmployee.objects.create(**defaults)
+
+
+@pytest.mark.django_db
+def test_business_operations_maps_to_business_ops(mirror_data):
+    employee = make_employee(email="a@oneacrefund.org", department_name="Business Operations")
+    group, scope = resolve_role(employee)
+    assert group.name == "Business Ops"
+    assert scope == "MW"
+
+
+@pytest.mark.django_db
+def test_field_operations_in_the_field_maps_to_field_officer(mirror_data):
+    employee = make_employee(
+        email="b@oneacrefund.org", department_name="Field Operations", work_location="Field"
+    )
+    group, scope = resolve_role(employee)
+    assert group.name == "Field Officer"
+
+
+@pytest.mark.django_db
+def test_field_operations_not_in_the_field_maps_to_field_supervisor(mirror_data):
+    employee = make_employee(
+        email="c@oneacrefund.org", department_name="Field Operations", work_location="Regional Office"
+    )
+    group, scope = resolve_role(employee)
+    assert group.name == "Field Supervisor"
+
+
+@pytest.mark.django_db
+def test_it_engineering_gets_data_team_with_all_country_scope(mirror_data):
+    employee = make_employee(
+        email="d@oneacrefund.org", department_name="IT Engineering", country_code="Kenya"
+    )
+    group, scope = resolve_role(employee)
+    assert group.name == "Data Team"
+    assert scope == "ALL"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "department",
+    ["Market Acces", "Rural Retail", "Trees", "Monitoring, Eval & Learning", "Payment for Ecosystem Services"],
+)
+def test_business_program_departments_map_to_business_program_user(department, mirror_data):
+    employee = make_employee(email="e@oneacrefund.org", department_name=department)
+    group, scope = resolve_role(employee)
+    assert group.name == "Business/Program User"
+    assert scope == "MW"
+
+
+@pytest.mark.django_db
+def test_unmapped_department_falls_back_to_gamma(mirror_data):
+    employee = make_employee(email="f@oneacrefund.org", department_name="Legal")
+    group, scope = resolve_role(employee)
+    assert group.name == "Gamma"
+    assert scope == "MW"
+
+
+@pytest.mark.django_db
+def test_role_assignment_rule_cannot_target_admin_group():
+    admin_group, _ = Group.objects.get_or_create(name=ADMIN_GROUP_NAME)
+    rule = RoleAssignmentRule(department_name="Anything", group=admin_group)
+    with pytest.raises(ValidationError):
+        rule.full_clean()
+
+
+@pytest.mark.django_db
+def test_assign_roles_preserves_manually_granted_admin_membership(mirror_data):
+    employee = make_employee(email="admin.person@oneacrefund.org", department_name="Business Operations")
+
+    user, _ = User.objects.get_or_create(username=employee.email, defaults={"email": employee.email})
+    admin_group, _ = Group.objects.get_or_create(name=ADMIN_GROUP_NAME)
+    user.groups.add(admin_group)
+
+    AssignRolesCommand().handle()
+
+    user.refresh_from_db()
+    group_names = set(user.groups.values_list("name", flat=True))
+    assert "Business Ops" in group_names
+    assert ADMIN_GROUP_NAME in group_names, "assign_roles must never remove a manually granted Admin membership"

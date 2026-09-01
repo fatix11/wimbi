@@ -172,6 +172,42 @@ The bigger goal this serves: OAF's farmer data is disparate across many systems 
 
 ---
 
+## ADR-008: An elastic, data-driven role-assignment module — not hardcoded department logic
+
+**Status:** Accepted
+
+**Context:** ADR-006 flagged that mapping SF's raw fields to Wimbi's role vocabulary would be "designed collaboratively once a real SF employee extract is available to inspect." It now is. Two things became clear inspecting it: (1) role assignment needs at least one conditional beyond department name alone — "Field Operations" splits into Field Officer vs. Field Supervisor purely by `WorkLocation` ("Field" vs. not) — and (2) the user explicitly does not want an "admin" tier to fall out of department membership at all (e.g., nobody should get admin rights just by being in a data/IT department), and wants the whole mapping to stay **elastic** — editable the way Superset/Snowflake roles are, without a code deploy every time OAF renames or adds a department (already seen: a typo, "Market Acces," among ~40 department names that will keep shifting).
+
+**Decision:** Three independent axes, deliberately not conflated (the previous `has_all_country_scope(user) = user.role == "data_team"` check in `accounts/rbac.py` conflated two of them):
+
+1. **Feature access (permissions)** — via Django's real `auth.Group`/`auth.Permission` system, not custom code. Each persona (Business Ops, Program Executive, Field Supervisor, Field Officer, Data Team, Business/Program User, Call Center, Gamma) is a `Group`; feature gates check `user.has_perm(...)` or group membership.
+2. **Data access (row-level country scope)** — stays the lightweight attribute-based scoping already built, but decoupled from group/persona identity. Stored per-user (a new `WimbiProfile.country_scope`, ISO code or `"ALL"`), resolved from the employee's own `SFEmployee.country_code` by default, or overridden to `"ALL"` per-rule (see below) for roles that need it — currently only Data Team.
+3. **Admin/trust tier** — never auto-derived. A new `RoleAssignmentRule.clean()` guardrail makes it structurally impossible for any rule to target the "Admin" group; admin membership is only ever added by a human directly in Django admin, and the sync command only ever touches groups that appear as a rule target (or the Gamma fallback) — so it can never see, and never touches, Admin membership.
+
+**The mapping itself is data, not code**: a new `accounts.RoleAssignmentRule` model (`department_name`, `work_location_operator` [ANY/EQUALS/NOT_EQUALS], `work_location_value`, target `group`, `country_scope_override`, `priority`), editable via Django admin — the actual "elastic role assignment module" asked for. A management command (`assign_roles`) walks every `SFEmployee`, evaluates the rule table (first match wins, ordered by `priority`), creates/updates a Django `User` + `WimbiProfile`, and sets group membership — touching only groups the rule table owns, so a manually-granted Admin membership survives every re-run. Employees matching no rule fall back to a baseline **Gamma** group (name borrowed deliberately from Superset's own minimal-access tier — same vocabulary, immediately recognizable).
+
+**Initial mapping** (source: user-provided SF department breakdown, 2026-09-01):
+
+| Department | → Group | Country scope |
+|---|---|---|
+| Business Operations | Business Ops | own country |
+| Executive Team | Program Executive | own country |
+| Field Operations, `WorkLocation = "Field"` | Field Officer | own country |
+| Field Operations, `WorkLocation != "Field"` | Field Supervisor | own country |
+| IT Engineering | Data Team | **ALL** |
+| IT Operations | Data Team | **ALL** |
+| Market Acces / Rural Retail / Trees / Monitoring, Eval & Learning / Payment for Ecosystem Services | Business/Program User | own country |
+| *(everything else)* | Gamma (fallback) | own country |
+
+**Known gap, not silently resolved:** no department in the current SF extract maps to **Call Center** — flagged back to the user rather than guessed at; that group exists but has no rule yet.
+
+**Consequences:**
+- `accounts/dev_users.py`'s 4 hardcoded personas are **not removed yet** — they remain the only path for personas with no real SF mapping today (Call Center) and stay useful for local dev/testing regardless. Real SF-backed users (via `assign_roles`) and dev personas coexist; wiring the actual login/session flow to prefer real users is a deliberate follow-up, not done in this pass.
+- `accounts/rbac.py`'s country-scope check needs to read `WimbiProfile.country_scope` for real users going forward, rather than the `role == "data_team"` string comparison.
+- Extending the mapping later (a new department, a job-title condition once available, a country-specific rule) means adding a row via Django admin, not a code change — this is the concrete deliverable behind "elastic."
+
+---
+
 ## Appendix: ANALYTICS reference
 
 Verified against the `entities` repo and the Q2 2026 Entities Project Report (2026-06-21, status Final) — not re-derived from memory. Kept here so the next person (including future-us) doesn't have to re-read the pipeline SQL from scratch.
