@@ -118,7 +118,12 @@ CORS_ALLOW_CREDENTIALS = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    # Without a session authenticator here, DRF's own (empty) auth
+    # resolution silently overwrites request._request.user back to
+    # AnonymousUser on every @api_view call — see accounts/authentication.py.
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'accounts.authentication.CsrfExemptSessionAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [],
 }
 

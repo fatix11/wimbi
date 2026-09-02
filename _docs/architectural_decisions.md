@@ -202,9 +202,32 @@ The bigger goal this serves: OAF's farmer data is disparate across many systems 
 **Resolved (2026-09-02):** Business Operations grants *both* the Business Ops and Call Center groups, rather than leaving Call Center permanently empty — the user's call, made explicitly rather than guessed at, once it became clear the SF extract has no field to split the two personas apart yet (verified: both groups now have identical 241-person membership). `RoleAssignmentRule.group` (a single FK) became `RoleAssignmentRule.groups` (M2M) to support this — a rule can now grant more than one persona's access when the source data can't yet distinguish them. Revisit the split once a distinguishing field (e.g. JobTitle) becomes available.
 
 **Consequences:**
-- `accounts/dev_users.py`'s 4 hardcoded personas are **not removed yet** — they remain the only path for personas with no real SF mapping today (Call Center) and stay useful for local dev/testing regardless. Real SF-backed users (via `assign_roles`) and dev personas coexist; wiring the actual login/session flow to prefer real users is a deliberate follow-up, not done in this pass.
-- `accounts/rbac.py`'s country-scope check needs to read `WimbiProfile.country_scope` for real users going forward, rather than the `role == "data_team"` string comparison.
+- ~~`accounts/dev_users.py`'s 4 hardcoded personas are not removed yet... wiring the actual login/session flow to prefer real users is a deliberate follow-up~~ — **done, see ADR-009**: the login flow now provisions real users JIT, dev personas included, through one shared path.
+- ~~`accounts/rbac.py`'s country-scope check needs to read `WimbiProfile.country_scope`...~~ — **done, see ADR-009**: simplified to `user.country == "ALL"`.
 - Extending the mapping later (a new department, a job-title condition once available, a country-specific rule) means adding a row via Django admin, not a code change — this is the concrete deliverable behind "elastic."
+
+---
+
+## ADR-009: Login provisions just-in-time, not in bulk — `auth.User` stays a blank slate
+
+**Status:** Accepted
+
+**Context:** ADR-008's `assign_roles` command bulk-created real `User`/`WimbiProfile`/`Group` rows for all 10,074 SF employees ahead of time, and the login flow still only recognized the 4 hardcoded `DevUser` entries via a hand-rolled session-cookie key that bypassed `django.contrib.auth` entirely. Wiring the two together was flagged as a deliberate follow-up in both ADR-006 and ADR-008. Rather than just teaching the existing login lookup about real users too, the user proposed a cleaner model closer to real SSO/JIT provisioning: `SFEmployee` (the directory) and `RoleAssignmentRule` (the elastic mapping) stay exactly as they are, but `auth.User` itself stays a **blank slate** — nobody gets a real account until they actually log in.
+
+**Decision:**
+1. **One function, `accounts/provisioning.get_or_provision_user(email)`, is the entire mechanism.** It looks up `SFEmployee` by email first (the real directory); if found, resolves `(groups, scope)` via the *unchanged* `resolve_role()`. Otherwise falls back to `DEV_USERS` (redefined to declare a direct `group_name` rather than a `role` slug — they're not real SF departments, so there's no reason to route them through rule matching). If neither directory recognizes the email, returns whatever `User` already exists for it (or `None`).
+2. **Provisioning happens on *every* login, not just the first** — group membership and `WimbiProfile.country_scope` are re-resolved and re-applied each time, using the existing `managed_group_ids()` safety (only touches groups the rule table owns). This means access naturally refreshes as `RoleAssignmentRule` or the SF extract changes, with no separate resync job to remember to run — and it's exactly what a future Keycloak integration will do too: email comes back from SSO, get-or-provision against the same directory, done.
+3. **Admin stays fully manual, with zero new code**: bootstrap via `python manage.py createsuperuser`, then grant "Admin" through the existing `/admin/` UI. ADR-008's `m2m_changed` guardrail already makes it impossible for step 1's rule-based resolution to ever touch that group.
+4. **Django's real session auth replaces the hand-rolled cookie.** `accounts/session.py`'s `SESSION_KEY` mechanism is gone; `login_user()`/`logout_user()` wrap `django.contrib.auth.login()`/`logout()` directly (still no real password check — same dev-stand-in-for-Keycloak posture, just backed by real identity). `get_session_user()` reads `request.user` + `request.user.wimbi_profile`, defaulting a bootstrapped superuser with no profile to all-country scope.
+5. **`assign_roles` → `preview_role_assignments`**: rewritten as a read-only dry-run report (group-set + scope → count), no database writes — useful for sanity-checking a rule change before it affects anyone's next login.
+6. **Yesterday's bulk-provisioned data was wiped** (`User.objects.all().delete()`) to start clean under this model — `SFEmployee` and `RoleAssignmentRule` were untouched, they're the directory/mapping, not the provisioned-user list.
+
+**A real bug found and fixed along the way, not part of the original plan:** DRF's `DEFAULT_AUTHENTICATION_CLASSES` was empty, which meant DRF's own (failed) authentication resolution silently overwrote `request._request.user` back to `AnonymousUser` on *every* `@api_view` call — even though `django.contrib.auth`'s middleware had already authenticated it correctly moments earlier. This is why the dev-only custom session-cookie approach "worked" before: it read the session key directly rather than trusting `request.user`, sidestepping the bug rather than hitting it. Fixed with a small `accounts.authentication.CsrfExemptSessionAuthentication` (registered as the one `DEFAULT_AUTHENTICATION_CLASSES` entry) — CSRF is deliberately skipped here too, since DRF's own `SessionAuthentication.enforce_csrf()` ignores Django's `@csrf_exempt` entirely (a separate, known gotcha) and this whole flow is still a dev-only stand-in for Keycloak SSO (ADR-001). Verified end-to-end: a dev persona and a real `IT Engineering` employee both log in, get correctly RBAC-scoped (403 vs. 200 against a non-Malawi farmer), and log out — with exactly as many `User` rows created as people who actually logged in.
+
+**Consequences:**
+- `farmers/views.py` needed no changes at all — it already only ever touched `get_session_user(...)`'s `.country` via the RBAC helpers.
+- Anyone integrating a new authenticated endpoint must remember DRF now requires `CsrfExemptSessionAuthentication` to see the real logged-in user — already the default via `REST_FRAMEWORK` settings, so this only matters if that setting is ever overridden per-view.
+- Revisit the CSRF exemption once real (non-cookie, or token-based) auth replaces this — it's a deliberate, scoped-down choice for the current dev-only posture, not a permanent security stance.
 
 ---
 

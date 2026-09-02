@@ -4,8 +4,8 @@ from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from accounts.management.commands.assign_roles import Command as AssignRolesCommand
 from accounts.models import ADMIN_GROUP_NAME, RoleAssignmentRule
+from accounts.provisioning import get_or_provision_user
 from accounts.role_assignment import resolve_role
 from analytics_mirror.models import SFEmployee
 
@@ -101,16 +101,45 @@ def test_role_assignment_rule_cannot_be_given_the_admin_group():
 
 
 @pytest.mark.django_db
-def test_assign_roles_preserves_manually_granted_admin_membership(mirror_data):
+def test_provisioning_preserves_manually_granted_admin_membership(mirror_data):
     employee = make_employee(email="admin.person@oneacrefund.org", department_name="Business Operations")
 
     user, _ = User.objects.get_or_create(username=employee.email, defaults={"email": employee.email})
     admin_group, _ = Group.objects.get_or_create(name=ADMIN_GROUP_NAME)
     user.groups.add(admin_group)
 
-    AssignRolesCommand().handle()
+    get_or_provision_user(employee.email)
 
     user.refresh_from_db()
     names = set(user.groups.values_list("name", flat=True))
     assert {"Business Ops", "Call Center"} <= names
-    assert ADMIN_GROUP_NAME in names, "assign_roles must never remove a manually granted Admin membership"
+    assert ADMIN_GROUP_NAME in names, "provisioning must never remove a manually granted Admin membership"
+
+
+@pytest.mark.django_db
+def test_provisioning_refreshes_groups_on_every_login(mirror_data):
+    """Not just first-login provisioning — a department change should
+    take effect the next time the same person logs in."""
+    employee = make_employee(email="refresh@oneacrefund.org", department_name="Business Operations")
+    user = get_or_provision_user(employee.email)
+    assert group_names(user.groups.all()) == {"Business Ops", "Call Center"}
+
+    employee.department_name = "IT Engineering"
+    employee.save()
+
+    user = get_or_provision_user(employee.email)
+    assert group_names(user.groups.all()) == {"Data Team"}
+    assert user.wimbi_profile.country_scope == "ALL"
+
+
+@pytest.mark.django_db
+def test_get_or_provision_user_returns_none_for_unknown_email(mirror_data):
+    assert get_or_provision_user("nobody@example.com") is None
+
+
+@pytest.mark.django_db
+def test_dev_user_is_provisioned_on_login(mirror_data):
+    user = get_or_provision_user("data.team@oneacrefund.org")
+    assert user is not None
+    assert group_names(user.groups.all()) == {"Data Team"}
+    assert user.wimbi_profile.country_scope == "ALL"

@@ -95,9 +95,13 @@ def _reject_admin_group_on_rule(sender, instance, action, pk_set, **kwargs):
 class WimbiProfile(models.Model):
     """
     Extends Django's own User with the data-access scope resolved from
-    RoleAssignmentRule. One row per real, SF-backed user — dev personas
-    (accounts/dev_users.py) don't get one; they're a separate, temporary
-    path for personas with no real SF mapping yet (e.g. Call Center).
+    the directory (SFEmployee + RoleAssignmentRule, or DEV_USERS — see
+    accounts/provisioning.py, ADR-009). Created and refreshed on every
+    login via get_or_provision_user() — auth.User is a blank slate
+    otherwise, nobody gets an account until they actually log in.
+    full_name/department_name are denormalized here so session resolution
+    (accounts/session.py) is a single query, not a second lookup back to
+    SFEmployee on every request.
     """
 
     user = models.OneToOneField(
@@ -105,6 +109,8 @@ class WimbiProfile(models.Model):
     )
     country_scope = models.CharField(max_length=8)  # ISO code, or "ALL"
     sf_email = models.EmailField(unique=True)
+    full_name = models.CharField(max_length=255, blank=True, default="")
+    department_name = models.CharField(max_length=128, blank=True, default="")
 
     def __str__(self):
         return f"{self.sf_email} ({self.country_scope})"

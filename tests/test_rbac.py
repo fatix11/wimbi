@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from accounts.dev_users import DevUser
 from accounts.rbac import can_access_farmer, has_all_country_scope, scope_farmers
+from accounts.session import SessionUser
 
 
 @dataclass
@@ -9,13 +9,13 @@ class FakeFarmer:
     country_code: str
 
 
-malawi_user = DevUser(
-    id="x", email="cc.malawi@oneacrefund.org", name="Chikondi Mvula",
-    country="MW", department="Call Center", role="call_center",
+malawi_user = SessionUser(
+    email="cc.malawi@oneacrefund.org", name="Chikondi Mvula",
+    country="MW", department="Call Center", groups=("Call Center",),
 )
-data_team_user = DevUser(
-    id="y", email="data.team@oneacrefund.org", name="Augustin Faraja",
-    country="ALL", department="Data & Analytics", role="data_team",
+data_team_user = SessionUser(
+    email="data.team@oneacrefund.org", name="Augustin Faraja",
+    country="ALL", department="Data & Analytics", groups=("Data Team",),
 )
 
 malawi_farmer = FakeFarmer(country_code="MW")

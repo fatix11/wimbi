@@ -1,10 +1,8 @@
-from accounts.session import SESSION_KEY
+from accounts.provisioning import get_or_provision_user
 
 
 def login_as(client, email):
-    session = client.session
-    session[SESSION_KEY] = email
-    session.save()
+    client.force_login(get_or_provision_user(email))
 
 
 def test_search_requires_auth(client, mirror_data):
