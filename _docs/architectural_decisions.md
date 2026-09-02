@@ -229,6 +229,8 @@ The bigger goal this serves: OAF's farmer data is disparate across many systems 
 - Anyone integrating a new authenticated endpoint must remember DRF now requires `CsrfExemptSessionAuthentication` to see the real logged-in user — already the default via `REST_FRAMEWORK` settings, so this only matters if that setting is ever overridden per-view.
 - Revisit the CSRF exemption once real (non-cookie, or token-based) auth replaces this — it's a deliberate, scoped-down choice for the current dev-only posture, not a permanent security stance.
 
+**Open question, deliberately not settled now:** refresh-on-*every*-login (point 2 above) is the current, working behavior — accepted for now because it's simple and correct — but it does mean two extra writes (group membership + `WimbiProfile`) on every single login, not just the first. Once real usage patterns exist, worth revisiting whether that's the right long-term call versus, say, only re-resolving on first login or on some periodic/cached cadence. Not a problem yet; flagged so it doesn't get treated as more final than it is.
+
 ---
 
 ## Appendix: ANALYTICS reference
