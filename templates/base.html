@@ -4,11 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Wimbi{% endblock %}</title>
+    <!-- Applied before first paint, from localStorage, to avoid a flash of
+         the wrong theme on load — the toggle button below just flips the
+         same class and re-saves it. -->
+    <script>
+        if (localStorage.getItem('wimbi-theme') === 'dark') {
+            document.documentElement.classList.add('dark');
+        }
+        if (localStorage.getItem('wimbi-sidebar-collapsed') === '1') {
+            document.documentElement.classList.add('sidebar-collapsed');
+        }
+    </script>
+    <script>
+        // Must run before the Tailwind CDN script below — tells it to key
+        // dark: utility variants off the .dark class (toggled above/below)
+        // rather than only the OS-level prefers-color-scheme media query.
+        tailwind = { config: { darkMode: 'class' } };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.12/htmx.min.js"></script>
     <style>
-        /* Palette per the dataviz skill's validated default (references/palette.md) —
-           light mode only for this internal pass, dark mode deferred. */
+        /* Palette per the dataviz skill's validated default (references/palette.md).
+           Dark values are that same reference's documented dark-mode steps,
+           not invented separately — kept in sync with it deliberately. */
         :root {
             --surface-1: #fcfcfb;
             --page-plane: #f9f9f7;
@@ -19,33 +37,91 @@
             --baseline: #c3c2b7;
             --series-1: #2a78d6;
             --border: rgba(11, 11, 11, 0.10);
+            --success: #006300;
+            --error: #b3261e;
+            --error-bg: #fdecec;
+        }
+        html.dark {
+            color-scheme: dark;
+            --surface-1: #1a1a19;
+            --page-plane: #0d0d0d;
+            --text-primary: #ffffff;
+            --text-secondary: #c3c2b7;
+            --text-muted: #898781;
+            --gridline: #2c2c2a;
+            --baseline: #383835;
+            --series-1: #3987e5;
+            --border: rgba(255, 255, 255, 0.10);
+            --success: #0ca30c;
+            --error: #e66767;
+            --error-bg: #3a1f1f;
         }
         body {
             background: var(--page-plane);
             color: var(--text-primary);
             font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
         }
+        #sidebar { width: 224px; transition: width 0.15s ease; }
+        html.sidebar-collapsed #sidebar { width: 60px; }
+        html.sidebar-collapsed .sidebar-label,
+        html.sidebar-collapsed #sidebar-logo,
+        html.sidebar-collapsed .sidebar-user { display: none; }
+        html.sidebar-collapsed #sidebar-toggle-icon { transform: rotate(180deg); }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="min-h-screen flex">
     {% if request.user.is_authenticated %}
-    <aside class="w-56 shrink-0 border-r flex flex-col h-screen sticky top-0"
+    <aside id="sidebar" class="shrink-0 border-r flex flex-col h-screen sticky top-0"
            style="border-color: var(--border); background: var(--surface-1);">
         <div>
-            <div class="p-4 text-lg font-semibold">Wimbi</div>
+            <div class="p-4 flex items-center justify-between">
+                <span id="sidebar-logo" class="text-lg font-semibold">Wimbi</span>
+                <button type="button" id="sidebar-toggle" title="Collapse sidebar"
+                        class="rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5 shrink-0" style="color: var(--text-secondary);">
+                    <svg id="sidebar-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+            </div>
             <nav class="px-2 space-y-1" hx-boost="true">
-                <a href="{% url 'dashboard_page' %}" class="block px-3 py-2 rounded-md text-sm hover:bg-black/5">Dashboard</a>
-                <a href="{% url 'search_page' %}" class="block px-3 py-2 rounded-md text-sm hover:bg-black/5">Search</a>
-                <a href="{% url 'dataset_list' %}" class="block px-3 py-2 rounded-md text-sm hover:bg-black/5">Upload data</a>
+                <a href="{% url 'dashboard_page' %}" title="Dashboard"
+                   class="flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-black/5 dark:hover:bg-white/5">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+                    <span class="sidebar-label">Dashboard</span>
+                </a>
+                <a href="{% url 'search_page' %}" title="Search"
+                   class="flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-black/5 dark:hover:bg-white/5">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                    <span class="sidebar-label">Search</span>
+                </a>
+                <a href="{% url 'dataset_list' %}" title="Upload data"
+                   class="flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-black/5 dark:hover:bg-white/5">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 21h16"/></svg>
+                    <span class="sidebar-label">Upload data</span>
+                </a>
+                <a href="{% url 'glossary_page' %}" title="Glossary"
+                   class="flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-black/5 dark:hover:bg-white/5">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+                    <span class="sidebar-label">Glossary</span>
+                </a>
             </nav>
         </div>
         <div class="mt-auto p-4 border-t text-sm" style="border-color: var(--border);">
-            <div class="font-medium">{{ session_user.name }}</div>
-            <div style="color: var(--text-secondary);">{{ session_user.department }} · {{ session_user.country }}</div>
+            <button type="button" id="theme-toggle"
+                    class="w-full flex items-center gap-2 text-left text-sm rounded-md px-2 py-1.5 mb-3 border hover:bg-black/5 dark:hover:bg-white/5"
+                    style="border-color: var(--border); color: var(--text-secondary);" title="Toggle dark mode">
+                <span id="theme-toggle-icon">🌙</span>
+                <span class="sidebar-label" id="theme-toggle-text">Dark mode</span>
+            </button>
+            <div class="sidebar-user">
+                <div class="font-medium">{{ session_user.name }}</div>
+                <div style="color: var(--text-secondary);">{{ session_user.department }} · {{ session_user.country }}</div>
+            </div>
             <form method="post" action="{% url 'logout_page' %}" class="mt-2">
                 {% csrf_token %}
-                <button type="submit" class="text-sm underline" style="color: var(--text-secondary);">Log out</button>
+                <button type="submit" title="Log out" class="flex items-center gap-2 text-sm underline" style="color: var(--text-secondary);">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+                    <span class="sidebar-label">Log out</span>
+                </button>
             </form>
         </div>
     </aside>
@@ -53,5 +129,40 @@
     <main class="flex-1 p-6">
         {% block content %}{% endblock %}
     </main>
+    <script>
+        (function () {
+            var toggle = document.getElementById('theme-toggle');
+            var icon = document.getElementById('theme-toggle-icon');
+            var text = document.getElementById('theme-toggle-text');
+            if (!toggle) return;
+            function sync() {
+                var isDark = document.documentElement.classList.contains('dark');
+                icon.textContent = isDark ? '☀️' : '🌙';
+                text.textContent = isDark ? 'Light mode' : 'Dark mode';
+            }
+            sync();
+            toggle.addEventListener('click', function () {
+                document.documentElement.classList.toggle('dark');
+                localStorage.setItem('wimbi-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+                sync();
+                // Simplest robust option: a few things (the dashboard's
+                // Chart.js colors, a couple of hardcoded status hexes) are
+                // set once at page load rather than reading the CSS
+                // variables live — reloading guarantees they pick up the
+                // new theme rather than needing per-page live-recolor logic.
+                location.reload();
+            });
+        })();
+        (function () {
+            var toggle = document.getElementById('sidebar-toggle');
+            if (!toggle) return;
+            toggle.addEventListener('click', function () {
+                document.documentElement.classList.toggle('sidebar-collapsed');
+                var collapsed = document.documentElement.classList.contains('sidebar-collapsed');
+                localStorage.setItem('wimbi-sidebar-collapsed', collapsed ? '1' : '0');
+                toggle.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+            });
+        })();
+    </script>
 </body>
 </html>

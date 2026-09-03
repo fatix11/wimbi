@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Glossary · Wimbi{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-1">Glossary</h1>
+<p class="text-sm mb-4" style="color: var(--text-secondary);">
+  Every canonical variable the bulk uploader maps columns to, across its {{ entities|length }} entities — what Wimbi's
+  data model actually covers, whether or not you're the one uploading.
+</p>
+
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+  <div class="rounded-lg border p-3" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-2xl font-semibold">{{ entities|length }}</div>
+    <div class="text-xs" style="color: var(--text-secondary);">entities</div>
+  </div>
+  <div class="rounded-lg border p-3" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-2xl font-semibold">{{ total_raw }}</div>
+    <div class="text-xs" style="color: var(--text-secondary);">mapped fields (raw)</div>
+  </div>
+  <div class="rounded-lg border p-3" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-2xl font-semibold">{{ total_deduped }}</div>
+    <div class="text-xs" style="color: var(--text-secondary);">unique variable names</div>
+  </div>
+  <div class="rounded-lg border p-3" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-2xl font-semibold">{{ shared_count }}</div>
+    <div class="text-xs" style="color: var(--text-secondary);">shared across entities</div>
+  </div>
+</div>
+
+<div class="flex flex-wrap items-center gap-2 mb-4 sticky top-0 py-2 z-10" style="background: var(--page-plane);">
+  <input type="text" id="glossary-search" placeholder="Filter by name, label, description…"
+         class="rounded-md border px-3 py-1.5 text-sm flex-1" style="border-color: var(--baseline); background: var(--surface-1); min-width: 220px;">
+  <div class="flex gap-1 flex-wrap" id="glossary-filters">
+    <button type="button" class="filter-chip active" data-filter="all">All fields</button>
+    <button type="button" class="filter-chip" data-filter="shared">Shared across entities</button>
+    <button type="button" class="filter-chip" data-filter="single">Single-entity only</button>
+    <button type="button" class="filter-chip" data-filter="gate">Save-gate required</button>
+  </div>
+  <span id="glossary-match-count" class="text-xs" style="color: var(--text-muted);"></span>
+</div>
+
+<div class="flex gap-6">
+  <nav class="hidden lg:flex flex-col gap-1 sticky self-start" style="top: 4.5rem; min-width: 170px;">
+    {% for entity in entities %}
+      <a href="#ent-{{ entity.key }}" class="text-sm px-2 py-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-between gap-2"
+         style="color: var(--text-secondary);">
+        <span>{{ entity.name }}</span><span class="text-xs" style="color: var(--text-muted);">{{ entity.variables|length }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+
+  <div class="flex-1 min-w-0 space-y-6">
+    {% for entity in entities %}
+      <section id="ent-{{ entity.key }}" style="scroll-margin-top: 4.5rem;">
+        <div class="rounded-t-lg border px-3 py-2 flex items-baseline justify-between gap-3" style="border-color: var(--border); background: var(--surface-1);">
+          <h2 class="text-sm font-semibold">{{ entity.name }}</h2>
+          <span class="text-xs" style="color: var(--text-muted);">{{ entity.feeds }} · {{ entity.variables|length }} fields</span>
+        </div>
+        <div class="overflow-x-auto rounded-b-lg border border-t-0" style="border-color: var(--border); background: var(--surface-1);">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left border-b" style="border-color: var(--border); color: var(--text-secondary);">
+                <th class="px-3 py-2 font-medium">Variable</th>
+                <th class="px-3 py-2 font-medium">Label</th>
+                <th class="px-3 py-2 font-medium">Description</th>
+                <th class="px-3 py-2 font-medium">Tier / Gate</th>
+                <th class="px-3 py-2 font-medium">Also in</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for v in entity.variables %}
+                <tr class="glossary-row border-b last:border-0" style="border-color: var(--border);"
+                    data-name="{{ v.name }}" data-label="{{ v.label }}" data-desc="{{ v.description }}"
+                    data-shared="{% if v.shared_with %}1{% else %}0{% endif %}" data-gate="{% if v.required %}1{% else %}0{% endif %}">
+                  <td class="px-3 py-2 font-mono text-xs whitespace-nowrap">{{ v.name }}</td>
+                  <td class="px-3 py-2 whitespace-nowrap" style="color: var(--text-secondary);">{{ v.label }}</td>
+                  <td class="px-3 py-2 text-xs" style="color: var(--text-muted); min-width: 260px; max-width: 420px;">{{ v.description|default:"—" }}</td>
+                  <td class="px-3 py-2 whitespace-nowrap">
+                    <span class="tier-badge tier-{{ v.tier }}">
+                      {% if v.tier == "required" %}Required{% elif v.tier == "nice_to_have" %}Nice-to-have{% else %}Optional{% endif %}
+                    </span>
+                    {% if v.required %}<span class="gate-badge">GATE</span>{% endif %}
+                  </td>
+                  <td class="px-3 py-2">
+                    {% if v.shared_with %}
+                      <div class="flex flex-wrap gap-1" style="max-width: 200px;">
+                        {% for other in v.shared_with %}<span class="shared-chip">{{ other }}</span>{% endfor %}
+                      </div>
+                    {% else %}<span style="color: var(--text-muted);">—</span>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {% endfor %}
+  </div>
+</div>
+
+<p class="text-xs mt-6 pt-3 border-t" style="border-color: var(--border); color: var(--text-muted); max-width: 70ch;">
+  Sourced live from <code>bulk_uploader/glossary.py</code> — <strong>Tier</strong> is the business-completeness scorecard
+  shown on the mapping page's progress tracker; the <strong>GATE</strong> badge marks the much narrower set the save gate
+  actually enforces per entity. "Shared across entities" means the exact same variable name is a real column on more than
+  one FACT/DIM table — not a sign of anything wrong, just where the warehouse itself repeats a concept.
+</p>
+
+<style>
+  .filter-chip {
+    font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--baseline);
+    color: var(--text-secondary); background: var(--surface-1); cursor: pointer; font-family: inherit;
+  }
+  .filter-chip.active { background: var(--series-1); color: #fff; border-color: var(--series-1); }
+  .tier-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.02em; }
+  .tier-badge.tier-required { background: var(--error-bg); color: var(--error); }
+  .tier-badge.tier-nice_to_have { background: rgba(42,120,214,0.14); color: var(--series-1); }
+  .tier-badge.tier-optional { background: var(--gridline); color: var(--text-muted); }
+  .gate-badge {
+    font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+    border: 1px solid var(--error); color: var(--error); margin-left: 4px;
+  }
+  .shared-chip { font-size: 10px; padding: 2px 7px; border-radius: 5px; background: rgba(42,120,214,0.10); color: var(--series-1); white-space: nowrap; }
+  .glossary-row.hidden-row { display: none; }
+</style>
+
+<script>
+(function () {
+  const search = document.getElementById('glossary-search');
+  const chips = document.querySelectorAll('.filter-chip');
+  const matchCount = document.getElementById('glossary-match-count');
+  let activeFilter = 'all';
+
+  function apply() {
+    const q = search.value.trim().toLowerCase();
+    let visible = 0, total = 0;
+    document.querySelectorAll('section[id^="ent-"]').forEach(function (section) {
+      let sectionVisible = 0;
+      section.querySelectorAll('.glossary-row').forEach(function (row) {
+        total++;
+        const haystack = (row.dataset.name + ' ' + row.dataset.label + ' ' + row.dataset.desc).toLowerCase();
+        const matchesQuery = !q || haystack.indexOf(q) !== -1;
+        let matchesFilter = true;
+        if (activeFilter === 'shared') matchesFilter = row.dataset.shared === '1';
+        else if (activeFilter === 'single') matchesFilter = row.dataset.shared === '0';
+        else if (activeFilter === 'gate') matchesFilter = row.dataset.gate === '1';
+        const show = matchesQuery && matchesFilter;
+        row.classList.toggle('hidden-row', !show);
+        if (show) { sectionVisible++; visible++; }
+      });
+      section.style.display = sectionVisible ? '' : 'none';
+    });
+    matchCount.textContent = visible + ' / ' + total + ' fields shown';
+  }
+
+  search.addEventListener('input', apply);
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      chips.forEach(function (c) { c.classList.remove('active'); });
+      chip.classList.add('active');
+      activeFilter = chip.dataset.filter;
+      apply();
+    });
+  });
+  apply();
+})();
+</script>
+{% endblock %}

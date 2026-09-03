@@ -6,7 +6,7 @@
     <h1 class="text-xl font-semibold mb-1">Wimbi</h1>
     <p class="text-sm mb-6" style="color: var(--text-secondary);">Farmer 360 — sign in with your OAF email</p>
     {% if error %}
-      <div class="mb-4 text-sm rounded-md px-3 py-2" style="background: #fdecec; color: #b3261e;">{{ error }}</div>
+      <div class="mb-4 text-sm rounded-md px-3 py-2" style="background: var(--error-bg); color: var(--error);">{{ error }}</div>
     {% endif %}
     <form method="post">
       {% csrf_token %}

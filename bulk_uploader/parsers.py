@@ -5,6 +5,7 @@ reading a header row and some values actually needs.
 """
 
 import csv
+import hashlib
 import io
 
 import openpyxl
@@ -89,6 +90,25 @@ def apply_mapping(rows: list[dict], column_mapping: dict[str, str]) -> list[dict
                 mapped[variable] = value
         mapped_rows.append(mapped)
     return mapped_rows
+
+
+def build_synthetic_key(raw_row: dict, columns: list[str]) -> str:
+    """A composite id from several source columns, for uploads with no
+    single clean source id — mirrors DIM_LOCATION/DIM_PEOPLE's own real
+    MD5-keying, and the same probabilistic-matching spirit as
+    BRIDGE_CLIENT_SOURCE_IDS falling back to composite matching when no
+    direct id exists. Normalized (trimmed, uppercased) before hashing so
+    the same real-world value maps to the same key regardless of casing/
+    whitespace drift between rows.
+
+    Returns "" (not a hash of a blank string) when every chosen column is
+    blank for this row — a synthetic key built from nothing is not a real
+    id, and should still fail the required-field gate honestly rather than
+    manufacturing a value."""
+    parts = [str(raw_row.get(column, "")).strip().upper() for column in columns]
+    if not any(parts):
+        return ""
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
 
 
 def validate_rows(mapped_rows: list[dict], required: list[str]) -> list[tuple[dict, list[str]]]:

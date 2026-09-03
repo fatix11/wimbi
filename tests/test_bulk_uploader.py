@@ -9,8 +9,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from accounts.provisioning import get_or_provision_user
 from bulk_uploader import glossary
 from bulk_uploader.models import UploadedDataset
-from bulk_uploader.parsers import ParseError, apply_mapping, parse_upload, validate_rows
+from bulk_uploader.parsers import ParseError, apply_mapping, build_synthetic_key, parse_upload, validate_rows
 from bulk_uploader.glossary import ENTITIES
+from bulk_uploader.views import _column_stats, _funnel_dims
 
 
 def login_as(client, email):
@@ -30,10 +31,21 @@ def sales_csv(rows=None):
 
 # --- glossary ---------------------------------------------------------
 
-def test_funnel_data_type_picks_the_entity():
-    assert glossary.DATA_TYPE_ENTITY["distributions"] == "sale"
-    assert glossary.DATA_TYPE_ENTITY["registration"] == "client"
-    assert glossary.DATA_TYPE_ENTITY["payments"] == "payment"
+def test_required_variables_for_entities_is_the_union_across_selections():
+    """The save gate for a multi-entity upload is the union of each
+    checked entity's own lineage requirement — replaces the old single
+    "Data Type" guess (2026-09-03), which only ever implied one entity."""
+    required = glossary.required_variables_for_entities(["sale", "client"])
+    assert "source_transaction_id" in required  # from sale
+    assert "source_client_id" in required  # from client
+    assert "full_name" in required  # from client
+    # No duplicates even though source_client_id-shaped names recur.
+    assert len(required) == len(set(required))
+
+
+def test_entities_grouped_scopes_to_just_the_given_entities():
+    grouped = glossary.entities_grouped(["sale"])
+    assert [key for key, _name, _vars in grouped] == ["sale"]
 
 
 def test_client_identity_columns_are_not_required():
@@ -198,12 +210,12 @@ def test_full_upload_map_validate_save_flow(client, mirror_data):
     login_as(client, "data.team@oneacrefund.org")
 
     response = client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions",
+        "country_code": "RW", "program": "Core", "entities": ["sale"],
         "operational_year": "2026", "season": "LR26", "file": sales_csv(),
     })
     assert response.status_code == 302
     dataset = UploadedDataset.objects.get()
-    assert dataset.entity == "sale"  # funnel picked it
+    assert dataset.entities == ["sale"]  # from the checklist
     assert dataset.rows.count() == 2
 
     # Mapping step pre-fills exact name-or-label matches — "transaction_id"
@@ -238,7 +250,7 @@ def test_invalid_rows_are_flagged_not_dropped(client, mirror_data):
     never rejects the whole file and never disappears."""
     login_as(client, "data.team@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions",
+        "country_code": "RW", "program": "Core", "entities": ["sale"],
         "file": sales_csv(rows=["TXN-1,ORD-1,MW-001,Seed,10,1200", ",ORD-2,MW-002,Tubes,50,370"]),
     })
     dataset = UploadedDataset.objects.get()
@@ -254,7 +266,7 @@ def test_invalid_rows_are_flagged_not_dropped(client, mirror_data):
 def test_upload_is_hidden_from_an_unrelated_user(client, mirror_data):
     owner = login_as(client, "data.team@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions", "file": sales_csv(),
+        "country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv(),
     })
     dataset = UploadedDataset.objects.get()
     assert dataset.uploaded_by == owner
@@ -274,7 +286,7 @@ def test_pivoted_product_survives_the_full_map_and_save_flow(client, mirror_data
     body = "transaction_id,species_a,species_b\nTXN-1,9,2\nTXN-2,5,0\n"
     upload = SimpleUploadedFile("seedlings.csv", body.encode(), content_type="text/csv")
     client.post("/uploads/new/", {
-        "country_code": "MW", "program": "Trees", "data_type": "distributions", "file": upload,
+        "country_code": "MW", "program": "Trees", "entities": ["sale"], "file": upload,
     })
     dataset = UploadedDataset.objects.get()
 
@@ -307,7 +319,7 @@ def test_sample_values_survive_a_second_visit_to_the_mapping_page(client, mirror
     as a key). raw_data is the fix — permanent, never overwritten."""
     login_as(client, "data.team@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions", "file": sales_csv(),
+        "country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv(),
     })
     dataset = UploadedDataset.objects.get()
 
@@ -329,7 +341,7 @@ def test_remapping_recomputes_from_raw_data_not_the_prior_mapped_result(client, 
     uploaded, not compound on top of whatever the previous pass produced."""
     login_as(client, "data.team@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions", "file": sales_csv(),
+        "country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv(),
     })
     dataset = UploadedDataset.objects.get()
 
@@ -368,7 +380,7 @@ def test_location_type_is_an_optional_funnel_field(client, mirror_data):
     and it shouldn't block an upload if left unset."""
     login_as(client, "data.team@oneacrefund.org")
     response = client.post("/uploads/new/", {
-        "country_code": "MW", "program": "Trees", "location_type": "Nursery", "file": sales_csv(),
+        "country_code": "MW", "program": "Trees", "entities": ["sale"], "location_type": "Nursery", "file": sales_csv(),
     })
     assert response.status_code == 302
     dataset = UploadedDataset.objects.get()
@@ -376,7 +388,7 @@ def test_location_type_is_an_optional_funnel_field(client, mirror_data):
 
     # Also editable afterward without re-uploading.
     client.post(f"/uploads/{dataset.pk}/edit/", {
-        "country_code": "MW", "program": "Trees", "location_type": "Shop",
+        "country_code": "MW", "program": "Trees", "entities": ["sale"], "location_type": "Shop",
     })
     dataset.refresh_from_db()
     assert dataset.location_type == "Shop"
@@ -389,7 +401,7 @@ def test_ignored_column_is_excluded_even_if_it_also_has_a_stray_selection(client
     accidentally been left mapped to "Full name" from earlier testing."""
     login_as(client, "data.team@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions", "file": sales_csv(),
+        "country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv(),
     })
     dataset = UploadedDataset.objects.get()
 
@@ -409,7 +421,7 @@ def test_ignored_column_is_excluded_even_if_it_also_has_a_stray_selection(client
 def test_ignored_state_persists_across_a_second_visit(client, mirror_data):
     login_as(client, "data.team@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions", "file": sales_csv(),
+        "country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv(),
     })
     dataset = UploadedDataset.objects.get()
     client.post(f"/uploads/{dataset.pk}/map/", {"ignore__product": "1"})
@@ -421,36 +433,35 @@ def test_ignored_state_persists_across_a_second_visit(client, mirror_data):
 
 
 @pytest.mark.django_db
-def test_data_type_is_optional_and_defaults_to_client_entity(client, mirror_data):
-    """An uploader unsure what kind of data this is shouldn't be blocked
-    from uploading — omitting data_type must still succeed."""
+def test_entities_checklist_is_required(client, mirror_data):
+    """Unlike the old optional "Data Type", the entities checklist directly
+    decides the save gate — an upload with none checked would have nothing
+    required at all, so at least one is mandatory, same as country/program."""
     login_as(client, "data.team@oneacrefund.org")
     response = client.post("/uploads/new/", {
         "country_code": "RW", "program": "Core", "file": sales_csv(),
     })
-    assert response.status_code == 302
-    dataset = UploadedDataset.objects.get()
-    assert dataset.data_type == ""
-    assert dataset.entity == "client"
+    assert response.status_code == 400
+    assert UploadedDataset.objects.count() == 0
 
 
 @pytest.mark.django_db
 def test_dataset_edit_updates_funnel_fields_without_touching_the_file(client, mirror_data):
     login_as(client, "data.team@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions", "file": sales_csv(),
+        "country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv(),
     })
     dataset = UploadedDataset.objects.get()
     original_row_count = dataset.rows.count()
 
     response = client.post(f"/uploads/{dataset.pk}/edit/", {
-        "country_code": "KE", "program": "Retail", "data_type": "registration", "season": "LR26",
+        "country_code": "KE", "program": "Retail", "entities": ["client"], "season": "LR26",
     })
     assert response.status_code == 302
     dataset.refresh_from_db()
     assert dataset.country_code == "KE"
     assert dataset.program == "Retail"
-    assert dataset.entity == "client"  # re-derived from the new data_type
+    assert dataset.entities == ["client"]
     assert dataset.season == "LR26"
     assert dataset.rows.count() == original_row_count  # file untouched
 
@@ -459,7 +470,7 @@ def test_dataset_edit_updates_funnel_fields_without_touching_the_file(client, mi
 def test_dataset_edit_resets_status_since_required_fields_may_change(client, mirror_data):
     login_as(client, "data.team@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "RW", "program": "Core", "data_type": "distributions", "file": sales_csv(),
+        "country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv(),
     })
     dataset = UploadedDataset.objects.get()
     client.post(f"/uploads/{dataset.pk}/map/", {"map__transaction_id": "source_transaction_id"})
@@ -467,7 +478,7 @@ def test_dataset_edit_resets_status_since_required_fields_may_change(client, mir
     assert dataset.status == UploadedDataset.STATUS_MAPPED
 
     client.post(f"/uploads/{dataset.pk}/edit/", {
-        "country_code": "RW", "program": "Core", "data_type": "registration",
+        "country_code": "RW", "program": "Core", "entities": ["client"],
     })
     dataset.refresh_from_db()
     assert dataset.status == UploadedDataset.STATUS_DRAFT
@@ -477,7 +488,7 @@ def test_dataset_edit_resets_status_since_required_fields_may_change(client, mir
 def test_data_team_can_see_other_peoples_uploads(client, mirror_data):
     login_as(client, "cc.malawi@oneacrefund.org")
     client.post("/uploads/new/", {
-        "country_code": "MW", "program": "Trees", "data_type": "distributions", "file": sales_csv(),
+        "country_code": "MW", "program": "Trees", "entities": ["sale"], "file": sales_csv(),
     })
     dataset = UploadedDataset.objects.get()
 
@@ -488,3 +499,161 @@ def test_data_team_can_see_other_peoples_uploads(client, mirror_data):
 
     assert client.get(f"/uploads/{dataset.pk}/preview/").status_code == 200
     assert client.get("/uploads/").context["datasets"].count() == 1
+
+
+# --- funnel dims: Country/Program/Source system/Season (2026-09-03) ---
+
+@pytest.mark.django_db
+def test_funnel_dims_cascades_program_to_source_system(mirror_data):
+    dims = _funnel_dims()
+    assert ("MW", "Malawi") in dims["countries"]
+    assert "Trees" in dims["programs_by_country"]["MW"]
+    assert dims["systems_by_key"]["MW||Trees"] == ["KOBO"]
+
+
+@pytest.mark.django_db
+def test_funnel_dims_seasons_are_the_3_closest_for_that_country(mirror_data):
+    """Real DimSeason data shows a country's season list spans many years —
+    only the 3 closest to today should surface, not the whole history."""
+    dims = _funnel_dims()
+    mw_seasons = dims["seasons_by_country"]["MW"]
+    assert len(mw_seasons) == 3
+    # Values are real season_label strings (e.g. "SR26"), not raw ids.
+    assert all(o["value"].startswith(("SR", "LR")) for o in mw_seasons)
+
+
+@pytest.mark.django_db
+def test_season_and_year_are_saved_as_plain_values(client, mirror_data):
+    login_as(client, "data.team@oneacrefund.org")
+    mw_season = _funnel_dims()["seasons_by_country"]["MW"][0]["value"]
+    response = client.post("/uploads/new/", {
+        "country_code": "MW", "program": "Trees", "entities": ["sale"],
+        "operational_year": "2026", "season": mw_season, "file": sales_csv(),
+    })
+    assert response.status_code == 302
+    dataset = UploadedDataset.objects.get()
+    assert dataset.operational_year == "2026"
+    assert dataset.season == mw_season
+
+
+# --- synthetic composite keys (2026-09-03) ---
+
+def test_build_synthetic_key_is_consistent_and_normalized():
+    """Same real-world value, different casing/whitespace, must hash the
+    same way — otherwise the same farmer would get two different keys
+    across rows depending on how each was typed."""
+    key1 = build_synthetic_key({"district": " Lilongwe ", "phone": "0991234567"}, ["district", "phone"])
+    key2 = build_synthetic_key({"district": "LILONGWE", "phone": "0991234567"}, ["district", "phone"])
+    assert key1 == key2
+    assert len(key1) == 32  # md5 hexdigest
+
+
+def test_build_synthetic_key_is_blank_when_every_chosen_column_is_blank():
+    """A synthetic key built from nothing is not a real id — must still
+    fail the required-field gate honestly, not manufacture a value."""
+    assert build_synthetic_key({"a": "", "b": ""}, ["a", "b"]) == ""
+
+
+@pytest.mark.django_db
+def test_synthetic_key_satisfies_the_save_gate_when_no_clean_id_exists(client, mirror_data):
+    """The concrete case this was built for: a file with no single clean
+    source_transaction_id column, but two columns that together identify
+    the row uniquely."""
+    login_as(client, "data.team@oneacrefund.org")
+    body = "district,phone,quantity\nLilongwe,0991111111,10\nZomba,0992222222,5\n"
+    upload = SimpleUploadedFile("no_id.csv", body.encode(), content_type="text/csv")
+    client.post("/uploads/new/", {"country_code": "MW", "program": "Trees", "entities": ["sale"], "file": upload})
+    dataset = UploadedDataset.objects.get()
+
+    client.post(f"/uploads/{dataset.pk}/map/", {
+        "map__quantity": "quantity",
+        "synth__source_transaction_id": ["district", "phone"],
+    })
+    dataset.refresh_from_db()
+    assert dataset.synthetic_keys == {"source_transaction_id": ["district", "phone"]}
+    assert dataset.valid_row_count == 2  # both rows now pass the gate
+
+    row1 = dataset.rows.get(row_number=1)
+    row2 = dataset.rows.get(row_number=2)
+    assert len(row1.mapped_data["source_transaction_id"]) == 32
+    assert row1.mapped_data["source_transaction_id"] != row2.mapped_data["source_transaction_id"]
+
+
+@pytest.mark.django_db
+def test_a_single_checked_column_does_not_count_as_a_synthetic_key(client, mirror_data):
+    """A combination needs 2+ columns — one checked column is just a
+    normal mapping candidate, not something to hash."""
+    login_as(client, "data.team@oneacrefund.org")
+    client.post("/uploads/new/", {"country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv()})
+    dataset = UploadedDataset.objects.get()
+
+    client.post(f"/uploads/{dataset.pk}/map/", {"synth__source_transaction_id": ["transaction_id"]})
+    dataset.refresh_from_db()
+    assert dataset.synthetic_keys == {}
+    assert dataset.valid_row_count == 0  # still missing — never actually mapped or combined
+
+
+@pytest.mark.django_db
+def test_explicit_column_mapping_wins_over_a_synthetic_key(client, mirror_data):
+    """If a row genuinely has a real mapped value, the synthetic fallback
+    must not clobber it — synthetic is a fallback for what's missing, not
+    an override."""
+    login_as(client, "data.team@oneacrefund.org")
+    client.post("/uploads/new/", {"country_code": "RW", "program": "Core", "entities": ["sale"], "file": sales_csv()})
+    dataset = UploadedDataset.objects.get()
+
+    client.post(f"/uploads/{dataset.pk}/map/", {
+        "map__transaction_id": "source_transaction_id",
+        "synth__source_transaction_id": ["client_id", "product"],
+    })
+    dataset.refresh_from_db()
+    row1 = dataset.rows.get(row_number=1)
+    assert row1.mapped_data["source_transaction_id"] == "TXN-1"  # the real mapped value, not a hash
+
+
+@pytest.mark.django_db
+def test_preview_tags_synthetic_columns(client, mirror_data):
+    login_as(client, "data.team@oneacrefund.org")
+    body = "district,phone,quantity\nLilongwe,0991111111,10\n"
+    upload = SimpleUploadedFile("no_id.csv", body.encode(), content_type="text/csv")
+    client.post("/uploads/new/", {"country_code": "MW", "program": "Trees", "entities": ["sale"], "file": upload})
+    dataset = UploadedDataset.objects.get()
+    client.post(f"/uploads/{dataset.pk}/map/", {"synth__source_transaction_id": ["district", "phone"]})
+
+    response = client.get(f"/uploads/{dataset.pk}/preview/")
+    assert b"(synthetic)" in response.content
+
+
+# --- per-column uniqueness/blank stats (2026-09-03) ---
+
+def test_column_stats_over_all_rows_not_just_the_sample():
+    raw_rows = [{"id": "A"}, {"id": "B"}, {"id": "A"}, {"id": ""}]
+    stats = _column_stats(raw_rows, "id", total_rows=4)
+    assert stats == {"unique_pct": 75, "blank_pct": 25}  # 3 distinct ("A","B","") of 4, 1 blank of 4
+
+
+def test_column_stats_blank_is_a_real_value_for_uniqueness():
+    """An all-blank column must show low uniqueness (1 distinct value over
+    many rows), not be mistaken for a good key candidate."""
+    raw_rows = [{"id": ""}] * 10
+    stats = _column_stats(raw_rows, "id", total_rows=10)
+    assert stats == {"unique_pct": 10, "blank_pct": 100}
+
+
+def test_column_stats_empty_dataset_does_not_divide_by_zero():
+    assert _column_stats([], "id", total_rows=0) == {"unique_pct": 0, "blank_pct": 0}
+
+
+@pytest.mark.django_db
+def test_mapping_page_shows_stats_per_column(client, mirror_data):
+    login_as(client, "data.team@oneacrefund.org")
+    body = "transaction_id,quantity\nTXN-1,10\nTXN-1,5\nTXN-2,\n"
+    upload = SimpleUploadedFile("dup.csv", body.encode(), content_type="text/csv")
+    client.post("/uploads/new/", {"country_code": "RW", "program": "Core", "entities": ["sale"], "file": upload})
+    dataset = UploadedDataset.objects.get()
+
+    response = client.get(f"/uploads/{dataset.pk}/map/")
+    txn_stats = next(c["stats"] for c in response.context["columns"] if c["name"] == "transaction_id")
+    assert txn_stats == {"unique_pct": 67, "blank_pct": 0}  # TXN-1, TXN-1, TXN-2 -> 2/3 distinct
+    qty_stats = next(c["stats"] for c in response.context["columns"] if c["name"] == "quantity")
+    assert qty_stats["blank_pct"] == 33  # 1 of 3 rows blank

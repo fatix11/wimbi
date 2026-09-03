@@ -1,7 +1,7 @@
 # Wimbi — User Acceptance Testing (v1)
 
-**Status:** Living document — covers what's actually built today (login, dashboard, search, farmer profile, journey timeline, sales history, RBAC). Re-run relevant sections after any change to these areas; extend with new sections as new features ship (next: the Bulk Data Mapper).
-**Last updated:** 2026-09-02
+**Status:** Living document — covers what's actually built today (login, dashboard, search, farmer profile, journey timeline, sales history, RBAC, the Bulk Data Mapper, the Glossary page). Re-run relevant sections after any change to these areas; extend with new sections as new features ship.
+**Last updated:** 2026-09-03
 **Companion to:** `jira-backlog.md` (what's built vs. not), `architectural_decisions.md` (the "why" behind anything that looks like a deliberate limitation, e.g. no phone search)
 
 ## How to use this
@@ -98,6 +98,34 @@ Each test has a **Pass/Fail** column — fill it in as you go, and a **Notes** c
 | 8.3 | Resize the browser window narrower — does anything break badly? (Mobile/tablet wasn't a design target yet, but worth knowing how badly it degrades.) | |
 | 8.4 | Anything from `features_and_user_stories.md` you expected to see here and didn't — check `jira-backlog.md` first in case it's already tracked as not-yet-built, then flag anything that looks like a genuine miss. | |
 
+## 9. Bulk Data Mapper / Uploader
+
+The full funnel → map → preview → save path was already exercised live on 2026-09-03 with a real 1,000-row Malawi registration file (`mw_lr26 registration data.csv`) and reached a genuine "Saved — rows committed" state, so the core round trip is confirmed working, not just unit-tested. The table below is for a fresh, deliberate pass — some rows describe things already seen working in that run; others (marked) are pure client-side JS behavior added afterward that hasn't had a live look yet, since this environment has no browser tool of its own.
+
+| ID | Steps | Expected | Pass/Fail | Notes |
+|---|---|---|---|---|
+| 9.1 [Functional] | Start a new upload, pick a Country | Program dropdown updates to that country's real programs (from `DimProgram`); picking a Program updates Source system to that program's real systems (from `DimSystem`) | | |
+| 9.2 [Functional] | Pick "Other…" on Program, Source system, or Location type | A text box appears; whatever you type becomes the stored value, not the literal word "Other" | | |
+| 9.3 [Functional] | Set a Source system, then reach the mapping page | A locked banner shows the source system, applied to every row; it's not a choosable option in any column's dropdown | | |
+| 9.4 [Functional] | Check 2+ entities on the funnel | Only those entities' variables appear in the mapping dropdown; the "Required for..." banner lists the union of their lineage requirements | | |
+| 9.5 [Judgment] | Pick a country/program combo you know well | Do the real cascading options (program names, systems) match what you'd actually expect for that country? | | |
+| 9.6 [Functional] | On the mapping page, map a column, then open another column's dropdown | The already-mapped variable no longer appears as an option there (except "Pivoted product quantity", which stays available everywhere) — **not yet live-verified, added in the 2026-09-03 polish round** | | |
+| 9.7 [Functional] | Check the Stats column for a column you know is a real unique id vs. one you know repeats | % unique is high for the id-like column, low for the repeating one; an all-blank column shows near-0% unique, not a misleadingly high number | | |
+| 9.8 [Functional] | For a required field with no clean source column, open "Build from multiple columns" and check 2+ | The field shows satisfied in the checklist; after saving, the preview page tags that column "(synthetic)" | | |
+| 9.9 [Functional] | Click "Validate and preview" while a required field is still genuinely missing | First click expands the synthetic-key section and scrolls to it rather than submitting; a second click goes through | | |
+| 9.10 [Functional] | Try the column-header drag handles and the sort arrows on the mapping table | Columns resize by dragging; clicking a sortable header (Mapped/Your column/Maps to) reorders rows, clicking again reverses | | |
+| 9.11 [Functional] | On the preview page, with at least one row missing a required field | Banner says a row is missing at least one required field (not a list of every field name) — the specific missing field(s) are shown per-row further down | | |
+| 9.12 [Judgment] | General visual pass on all 3 uploader screens, in both light and dark mode | Anything crowded, misaligned, or hard to read in either theme? | | |
+| 9.13 [Functional] | Visit `/glossary/` as any logged-in user (not just an uploader) | Page loads without a 403; search and the Shared/Single-entity/Save-gate filter chips narrow the table live | | |
+
+## 10. Theme & Layout
+
+| ID | Steps | Expected | Pass/Fail | Notes |
+|---|---|---|---|---|
+| 10.1 [Functional] | Click the dark-mode toggle in the sidebar | Page switches theme and reloads; the choice persists across a fresh visit/new tab | | |
+| 10.2 [Functional] | Click the sidebar collapse toggle | Sidebar shrinks to icons only; labels reappear on expand; the collapsed/expanded state persists across a reload — **not yet live-verified** | | |
+| 10.3 [Judgment] | Dashboard chart colors, sales table, and any red/green status text in dark mode | Do the colors still read clearly against the dark background, nothing washed out or illegible? | | |
+
 ---
 
 ## Known, deliberate gaps (not bugs — don't re-report these)
@@ -107,3 +135,5 @@ Each test has a **Pass/Fail** column — fill it in as you go, and a **Notes** c
 - **No match-confidence badge or lineage drill-down** — deferred by design (ADR-005, Epic 3 in `jira-backlog.md`).
 - **Dashboard is intentionally lightweight** — 4 stat tiles + 1 chart, not a Superset replacement (see the dashboard's own subtitle).
 - **Single-country data** — only Malawi has real data today; the two other countries visible to Data Team accounts (`GL-KE-...`, `GL-RW-...`) are synthetic test fixtures, not real farmers.
+- **Bulk uploader is file-upload only** — no Google Sheets or Snowflake/Dataiku connectors, no AI-assisted mapping suggestions, no Data Team approval workflow, and no promotion ETL into `ANALYTICS.SOURCES` yet — all named v1.2+ in `bulk-uploader.md`.
+- **Season/Operational year are optional funnel fields** — Season only offers the 3 closest seasons to today for the chosen country (by design, see `bulk-uploader.md`); it's not meant to cover arbitrary historical backfills.

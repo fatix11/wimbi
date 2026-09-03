@@ -19,6 +19,7 @@ from django.urls import include, path
 from django.views.generic.base import RedirectView
 
 from accounts import views as account_views
+from bulk_uploader import views as bulk_uploader_views
 from farmers import views as farmer_views
 
 urlpatterns = [
@@ -33,6 +34,7 @@ urlpatterns = [
     path('logout/', account_views.logout_page, name='logout_page'),
     path('dashboard/', farmer_views.dashboard_page, name='dashboard_page'),
     path('search/', farmer_views.search_page, name='search_page'),
+    path('glossary/', bulk_uploader_views.glossary_page, name='glossary_page'),
     path('farmers/<str:gl_client_id>/', farmer_views.farmer_profile_page, name='farmer_profile_page'),
     path('farmers/<str:gl_client_id>/journey/', farmer_views.journey_partial, name='journey_partial'),
     path('farmers/<str:gl_client_id>/sales/', farmer_views.sales_partial, name='sales_partial'),

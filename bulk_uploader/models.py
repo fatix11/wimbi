@@ -11,7 +11,7 @@ Requirements and phasing: _docs/bulk-uploader.md
 from django.contrib.auth.models import User
 from django.db import models
 
-from .glossary import DATA_TYPES, ENTITIES, LOCATION_TYPES
+from .glossary import ENTITIES, LOCATION_TYPES
 
 
 class UploadedDataset(models.Model):
@@ -27,18 +27,28 @@ class UploadedDataset(models.Model):
         (STATUS_SAVED, "Saved — rows committed"),
     ]
 
-    # The funnel (Country → Program → Data Type), ported from OAF's live
-    # Google Form. Beyond scoping the mapping UI, these tag the upload for
-    # whichever promotion-to-SOURCES path it eventually needs (v1.2+).
+    # The funnel (Country → Program → Entities). Beyond scoping the mapping
+    # UI, these tag the upload for whichever promotion-to-SOURCES path it
+    # eventually needs (v1.2+).
     country_code = models.CharField(max_length=8)
     program = models.CharField(max_length=64)
-    # Not required — an uploader who isn't sure yet what kind of data this
-    # is shouldn't be blocked from uploading the file. Left blank, entity
-    # defaults to "client" (the most broadly-relevant entity — every real
-    # file stretch-tested so far carried at least some Client columns).
-    # Both are editable after upload via dataset_edit, without re-uploading.
-    data_type = models.CharField(max_length=32, choices=[(k, label) for k, label, _e in DATA_TYPES], blank=True)
-    entity = models.CharField(max_length=32, choices=[(k, e.name) for k, e in ENTITIES.items()])
+    # Which system this file's data came from (KOBO, ODOO, FINERACT...),
+    # sourced from the real DimSystem cascade off country+program. Broadcast
+    # into every row's mapped_data as a locked constant (see dataset_map) —
+    # a real upload almost never carries its own per-row source_system
+    # column, since the whole file already comes from one system by
+    # definition. Left blank, source_system stays a normal mappable
+    # variable for the rare file that genuinely does mix systems per row.
+    source_system = models.CharField(max_length=64, blank=True)
+    # Which of the 8 glossary entities this file involves — one or many
+    # (a real Kobo distribution sheet routinely carries Client, Location,
+    # People, AND Sale columns at once). Replaced the earlier single-guess
+    # "Data Type" field (2026-09-03): Data Type only loosely implied one
+    # entity and left real multi-entity files under-served. This list
+    # directly decides the save gate (required_variables_for_entities) and
+    # scopes which variables the mapping dropdown offers. Editable after
+    # upload via dataset_edit, without re-uploading.
+    entities = models.JSONField(default=list)
     # A single upload is virtually always one place-type throughout (all
     # nursery, all shop...) — funnel-level for the same reason Country and
     # Program already are, rather than a per-row mapped column.
@@ -53,6 +63,15 @@ class UploadedDataset(models.Model):
     # itself is recorded, not just its result, so it stays auditable and
     # can seed a suggested mapping for the same dataset next season (v1.2+).
     column_mapping = models.JSONField(default=dict)
+    # {glossary variable name: [source column names]} — for a required
+    # lineage id with no single clean source column, a composite key built
+    # by hashing 2+ chosen columns together (parsers.build_synthetic_key),
+    # tagged as lower-confidence/"synthetic" the same way a funnel-broadcast
+    # value (source_system) is: dataset-level, applied to every row, and
+    # only used where no real per-row mapped value already exists. Mirrors
+    # BRIDGE_CLIENT_SOURCE_IDS's own real match_confidence/match_method
+    # fallback to composite matching when no direct id exists.
+    synthetic_keys = models.JSONField(default=dict)
     # Source column names explicitly reviewed and dismissed — distinct from
     # simply unmapped. A column with no decision yet and a column someone
     # deliberately decided doesn't matter (a checksum column, an org-chart
@@ -70,7 +89,11 @@ class UploadedDataset(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.original_filename} ({self.country_code}/{self.program}/{self.data_type})"
+        return f"{self.original_filename} ({self.country_code}/{self.program})"
+
+    @property
+    def entity_names(self) -> str:
+        return ", ".join(ENTITIES[key].name for key in self.entities if key in ENTITIES)
 
     @property
     def valid_row_count(self) -> int:

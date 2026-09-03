@@ -3,20 +3,57 @@
 {% block content %}
 <div class="flex items-center justify-between">
   <a href="{% url 'dataset_list' %}" hx-boost="true" class="text-sm" style="color: var(--text-secondary);">&larr; Back to uploads</a>
-  <a href="{% url 'dataset_edit' dataset.pk %}" hx-boost="true" class="text-sm underline" style="color: var(--text-secondary);">Edit country/program/data type</a>
+  <a href="{% url 'dataset_edit' dataset.pk %}" hx-boost="true" class="text-sm underline" style="color: var(--text-secondary);">Edit funnel answers</a>
 </div>
 
 <h1 class="text-xl font-semibold mt-2 mb-1">Map columns</h1>
 <p class="text-sm mb-4" style="color: var(--text-secondary);">
-  Step 2 of 3 — {{ dataset.original_filename }} · {{ dataset.country_code }} · {{ dataset.program }} · {{ dataset.get_data_type_display|default:"data type not set" }}.
-  Type to search — variables aren't restricted to one entity, since a real upload routinely carries columns for several.
+  Step 2 of 3 — {{ dataset.original_filename }} · {{ dataset.country_code }} · {{ dataset.program }} · {{ dataset.entity_names|default:"no entities selected" }}.
+  Type to search — variables are scoped to the entities you checked, since a real upload routinely carries columns for several.
   Anything you leave unmapped is dropped, except columns you tag "Pivoted product quantity", which are always kept together.
 </p>
 
+{% if dataset.source_system %}
+<div class="rounded-lg border p-3 mb-3 text-sm flex items-center justify-between" style="border-color: var(--border); background: var(--surface-1);">
+  <div style="color: var(--text-secondary);"><strong>Source system</strong> — locked from your funnel answer, applied to every row. Change it via "Edit country/program/entities" above.</div>
+  <div class="font-medium rounded-md px-2 py-1" style="background: var(--page-plane);">{{ dataset.source_system }}</div>
+</div>
+{% endif %}
+
 <div class="rounded-lg border p-3 mb-3 text-sm" style="border-color: var(--border); background: var(--surface-1); color: var(--text-secondary);">
-  <strong>Required for {{ dataset.get_entity_display }}</strong> — this is the actual save gate: every row needs these populated so it stays traceable back to its source. Rows missing them are flagged next, not silently dropped.
+  <strong>Required for {{ dataset.entity_names }}</strong> — this is the actual save gate: every row needs these populated so it stays traceable back to its source. Rows missing them are flagged next, not silently dropped.
   <div id="gate-required-items" class="grid grid-cols-1 sm:grid-cols-3 gap-1 mt-2"></div>
 </div>
+
+<form method="post" id="mapping-form">
+  {% csrf_token %}
+{% if required_fields %}
+<details id="synthetic-banner" class="rounded-lg border p-3 mb-3 text-sm" style="border-color: var(--border); background: var(--surface-1); color: var(--text-secondary);" {% if dataset.synthetic_keys %}open{% endif %}>
+  <summary class="cursor-pointer font-medium" style="color: var(--text-primary);">No clean source id for one of the fields above? Build a synthetic key from multiple columns</summary>
+  <p class="mt-2">Combine two or more of your columns into a synthetic key instead —
+  tagged as <em>synthetic</em>, lower-confidence than a real id, the same way MASTER itself falls back to composite/probabilistic
+  matching when no direct id exists. Only the fields still missing a real mapping are listed below.</p>
+  <div class="mt-2 space-y-1">
+    {% for field in required_fields %}
+      <details class="synthetic-field-row" data-variable="{{ field.name }}" {% if field.synthetic_columns %}open{% endif %}>
+        <summary class="cursor-pointer font-medium" style="color: var(--text-primary);">
+          Build "{{ field.label }}" from multiple columns
+          {% if field.synthetic_columns %}<span style="color: var(--text-muted); font-weight: normal;">({{ field.synthetic_columns|length }} selected)</span>{% endif %}
+        </summary>
+        <div class="synthetic-group grid grid-cols-2 sm:grid-cols-3 gap-1 mt-2 pl-4">
+          {% for column in columns %}
+            <label class="flex items-center gap-1 text-xs">
+              <input type="checkbox" name="synth__{{ field.name }}" value="{{ column.name }}" class="synthetic-checkbox"
+                     {% if column.name in field.synthetic_columns %}checked{% endif %}>
+              {{ column.name }}
+            </label>
+          {% endfor %}
+        </div>
+      </details>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
 
 <div class="rounded-lg border p-3 mb-4 text-sm" style="border-color: var(--border); background: var(--surface-1); color: var(--text-secondary);">
   <div class="flex items-center justify-between mb-2">
@@ -47,18 +84,35 @@
   <span id="selected-count" class="text-sm" style="color: var(--text-muted);"></span>
 </div>
 
-<form method="post" id="mapping-form">
-  {% csrf_token %}
+<style>
+  .col-resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 1; }
+  .col-resizer:hover, .col-resizer.active { background: var(--series-1); opacity: 0.5; }
+  #mapping-table th { position: relative; }
+  #mapping-table .samples-cell, #mapping-table .column-name-cell {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+</style>
+
   <div class="overflow-x-auto rounded-lg border mb-4" style="border-color: var(--border); background: var(--surface-1);">
-    <table class="w-full text-sm">
+    <table class="w-full text-sm" id="mapping-table" style="table-layout: fixed;">
+      <colgroup>
+        <col style="width: 36px;">
+        <col style="width: 90px;">
+        <col style="width: 70px;">
+        <col style="width: 180px;">
+        <col style="width: 140px;">
+        <col style="width: 300px;">
+        <col style="width: 220px;">
+      </colgroup>
       <thead>
         <tr class="text-left border-b" style="border-color: var(--border); color: var(--text-secondary);">
           <th class="px-3 py-2"><input type="checkbox" id="select-all"></th>
-          <th class="px-3 py-2 font-medium sort-header cursor-pointer select-none" data-sort="mapped">Mapped <span class="sort-arrow"></span></th>
-          <th class="px-3 py-2 font-medium">Ignore</th>
-          <th class="px-3 py-2 font-medium sort-header cursor-pointer select-none" data-sort="column">Your column <span class="sort-arrow"></span></th>
-          <th class="px-3 py-2 font-medium sort-header cursor-pointer select-none" data-sort="maps_to">Maps to <span class="sort-arrow"></span></th>
-          <th class="px-3 py-2 font-medium">Sample values</th>
+          <th class="px-3 py-2 font-medium sort-header cursor-pointer select-none" data-sort="mapped">Mapped <span class="sort-arrow"></span><span class="col-resizer"></span></th>
+          <th class="px-3 py-2 font-medium">Ignore<span class="col-resizer"></span></th>
+          <th class="px-3 py-2 font-medium sort-header cursor-pointer select-none" data-sort="column">Your column <span class="sort-arrow"></span><span class="col-resizer"></span></th>
+          <th class="px-3 py-2 font-medium">Stats<span class="col-resizer"></span></th>
+          <th class="px-3 py-2 font-medium sort-header cursor-pointer select-none" data-sort="maps_to">Maps to <span class="sort-arrow"></span><span class="col-resizer"></span></th>
+          <th class="px-3 py-2 font-medium">Sample values<span class="col-resizer"></span></th>
         </tr>
       </thead>
       <tbody id="mapping-rows">
@@ -66,13 +120,14 @@
           <tr class="border-b last:border-0 mapping-row" style="border-color: var(--border);" data-column-name="{{ column.name }}">
             <td class="px-3 py-2"><input type="checkbox" class="row-select"></td>
             <td class="px-3 py-2 text-center">
-              <span class="mapped-check text-sm" style="color: #006300;"></span>
+              <span class="mapped-check text-sm" style="color: var(--success);"></span>
             </td>
             <td class="px-3 py-2 text-center">
               <input type="checkbox" class="ignore-toggle" name="ignore__{{ column.name }}" value="1"
                      {% if column.ignored %}checked{% endif %}>
             </td>
             <td class="px-3 py-2 font-medium column-name-cell">{{ column.name }}</td>
+            <td class="px-3 py-2 text-xs" style="color: var(--text-muted);">{{ column.stats.unique_pct }}% unique · {{ column.stats.blank_pct }}% blank</td>
             <td class="px-3 py-2 relative combobox-cell">
               <input type="text" class="combobox-input w-full rounded-md border px-2 py-1 text-sm" autocomplete="off"
                      placeholder="Search variables…" style="border-color: var(--baseline);">
@@ -97,22 +152,44 @@
 {{ variable_options|json_script:"variable-options-data" }}
 {{ required_fields|json_script:"gate-required-data" }}
 {{ tier_fields|json_script:"tier-fields-data" }}
+{{ multi_value_variables|json_script:"multi-value-variables-data" }}
 <script>
 (function () {
   const OPTIONS = JSON.parse(document.getElementById('variable-options-data').textContent);
   const GATE_REQUIRED = JSON.parse(document.getElementById('gate-required-data').textContent);
   const TIER_FIELDS = JSON.parse(document.getElementById('tier-fields-data').textContent);
+  const LOCKED_SOURCE_SYSTEM = {{ locked_source_system|yesno:"true,false" }};
+  const MULTI_VALUE_VARIABLES = JSON.parse(document.getElementById('multi-value-variables-data').textContent);
   const MAX_RESULTS = 10;
   const byName = {};
   OPTIONS.forEach(function (o) { byName[o.name] = o; });
 
   function normalize(s) { return (s || '').toLowerCase(); }
 
-  function search(term) {
+  // Once a real column claims a variable, it drops out of every OTHER
+  // column's search — a 1:1 mapping is the normal case, and offering an
+  // already-used variable elsewhere just invites duplicate-mapping
+  // mistakes. Multi-value variables (pivoted_product) are the deliberate
+  // exception: they're designed for many columns to share at once.
+  function usedByOtherRows(currentRow) {
+    const used = {};
+    allRows().forEach(function (row) {
+      if (row === currentRow || isIgnored(row)) return;
+      const value = row.querySelector('.combobox-value').value;
+      if (value) used[value] = true;
+    });
+    return used;
+  }
+
+  function search(term, currentRow) {
+    const used = usedByOtherRows(currentRow);
+    const available = OPTIONS.filter(function (o) {
+      return MULTI_VALUE_VARIABLES.indexOf(o.name) !== -1 || !used[o.name];
+    });
     const q = normalize(term);
-    if (!q) return OPTIONS.slice(0, MAX_RESULTS);
+    if (!q) return available.slice(0, MAX_RESULTS);
     const starts = [], contains = [];
-    OPTIONS.forEach(function (o) {
+    available.forEach(function (o) {
       const hay = normalize(o.label + ' ' + o.name);
       if (hay.startsWith(q)) starts.push(o);
       else if (hay.indexOf(q) !== -1) contains.push(o);
@@ -127,7 +204,12 @@
   function isIgnored(row) { return row.querySelector('.ignore-toggle').checked; }
   const allRows = function () { return document.querySelectorAll('.mapping-row'); };
 
-  function currentMapping() {
+  // Just the variables with a real per-row column mapped to them —
+  // deliberately excludes the funnel-locked, synthetic, and pivoted-
+  // implied cases below, since refreshSyntheticVisibility() needs to know
+  // specifically "has an actual column claimed this" to decide whether a
+  // field's synthetic-build reminder is still relevant.
+  function realColumnMapping() {
     const mapped = {};
     allRows().forEach(function (row) {
       if (isIgnored(row)) return;
@@ -137,12 +219,49 @@
     return mapped;
   }
 
+  function currentMapping() {
+    const mapped = Object.assign({}, realColumnMapping());
+    if (LOCKED_SOURCE_SYSTEM) mapped['source_system'] = true;
+    document.querySelectorAll('.synthetic-field-row').forEach(function (row) {
+      const checked = row.querySelectorAll('.synthetic-checkbox:checked').length;
+      if (checked >= 2) mapped[row.dataset.variable] = true;
+    });
+    // A pivoted-product column's own name IS the product, and its value
+    // IS the quantity — mapping one satisfies both, not just itself.
+    if (mapped['pivoted_product']) {
+      mapped['product_name'] = true;
+      mapped['quantity'] = true;
+    }
+    return mapped;
+  }
+
+  function resolvedOutsideSynthetic(variableName) {
+    // Locked source_system is resolved by the funnel, not a real column —
+    // its own synthetic-build reminder is pointless once that's set.
+    return LOCKED_SOURCE_SYSTEM && variableName === 'source_system';
+  }
+
+  function refreshSyntheticVisibility() {
+    const mapped = realColumnMapping();
+    let anyVisible = false;
+    document.querySelectorAll('.synthetic-field-row').forEach(function (row) {
+      const variable = row.dataset.variable;
+      const show = !mapped[variable] && !resolvedOutsideSynthetic(variable);
+      row.hidden = !show;
+      if (show) anyVisible = true;
+    });
+    const banner = document.getElementById('synthetic-banner');
+    if (banner) banner.hidden = !anyVisible;
+  }
+
   function renderFieldGrid(containerId, fields) {
     const mapped = currentMapping();
     const container = document.getElementById(containerId);
     container.innerHTML = fields.map(function (f) {
       const done = !!mapped[f.name];
-      const color = done ? '#006300' : '#b3261e';
+      const color = done
+        ? getComputedStyle(document.documentElement).getPropertyValue('--success').trim()
+        : getComputedStyle(document.documentElement).getPropertyValue('--error').trim();
       const mark = done ? '✓' : '☐';
       return '<div style="color: ' + color + ';">' + mark + ' ' + f.label + '</div>';
     }).join('');
@@ -162,6 +281,7 @@
     renderFieldGrid('tier-required-items', TIER_FIELDS.filter(function (f) { return f.tier === 'required'; }));
     renderFieldGrid('tier-nice-items', TIER_FIELDS.filter(function (f) { return f.tier === 'nice_to_have'; }));
     renderPercentage();
+    refreshSyntheticVisibility();
   }
 
   function updateRowVisuals(row) {
@@ -179,7 +299,7 @@
       check.style.color = 'var(--text-muted)';
     } else if (value) {
       check.textContent = '✓';
-      check.style.color = '#006300';
+      check.style.color = getComputedStyle(document.documentElement).getPropertyValue('--success').trim();
     } else {
       check.textContent = '';
     }
@@ -206,7 +326,7 @@
 
   function renderPanel(row, term) {
     const panel = row.querySelector('.combobox-panel');
-    const matches = search(term);
+    const matches = search(term, row);
     if (!matches.length) {
       panel.innerHTML = '<div class="px-3 py-2" style="color: var(--text-muted);">No matches</div>';
     } else {
@@ -241,6 +361,11 @@
       setIgnored(row, event.target.checked);
     });
   });
+
+  document.querySelectorAll('.synthetic-checkbox').forEach(function (checkbox) {
+    checkbox.addEventListener('change', renderAllProgress);
+  });
+
   renderAllProgress();
 
   // Bulk selection + actions.
@@ -308,6 +433,59 @@
       });
       rows.forEach(function (row) { tbody.appendChild(row); });
     });
+  });
+
+  // Drag-to-resize column widths — the fixed <colgroup> widths below are
+  // starting defaults, not a fixed layout; "Sample values" in particular
+  // was too wide by default for real files with short sample text.
+  const table = document.getElementById('mapping-table');
+  const cols = table.querySelectorAll('colgroup col');
+  table.querySelectorAll('.col-resizer').forEach(function (handle) {
+    handle.addEventListener('mousedown', function (event) {
+      event.preventDefault();
+      const th = handle.closest('th');
+      const index = Array.from(th.parentNode.children).indexOf(th);
+      const col = cols[index];
+      const startX = event.clientX;
+      const startWidth = th.getBoundingClientRect().width;
+      handle.classList.add('active');
+      function onMove(moveEvent) {
+        col.style.width = Math.max(40, startWidth + (moveEvent.clientX - startX)) + 'px';
+      }
+      function onUp() {
+        handle.classList.remove('active');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
+  // Nudge, don't block: the first submit attempt with a required field
+  // still unsatisfied reveals the synthetic-key option instead of going
+  // straight to the preview page's flagged-rows message. A second click
+  // goes through regardless — real data sometimes genuinely can't supply
+  // a field (Kobo Trees pricing, etc.), so this never hard-blocks saving.
+  let submitAttempted = false;
+  document.getElementById('mapping-form').addEventListener('submit', function (event) {
+    if (submitAttempted) return;
+    const mapped = currentMapping();
+    const missing = GATE_REQUIRED.filter(function (f) { return !mapped[f.name]; });
+    if (!missing.length) return;
+
+    event.preventDefault();
+    submitAttempted = true;
+    const banner = document.getElementById('synthetic-banner');
+    if (banner) {
+      banner.hidden = false;
+      banner.open = true;
+      missing.forEach(function (f) {
+        const row = document.querySelector('.synthetic-field-row[data-variable="' + f.name + '"]');
+        if (row) row.open = true;
+      });
+      banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   });
 })();
 </script>

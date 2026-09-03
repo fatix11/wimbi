@@ -86,6 +86,74 @@ SALES_LINES = [
          derived_season="LR23"),
 ]
 
+# Small, deliberately simplified stand-ins for the real DimCountry/
+# DimProgram/DimSystem rows (2026-09-03, for the bulk uploader's funnel
+# dropdowns) — the real mirrored data has messy, genuinely-varying local
+# names per country (Rwanda's "Core" program is really called "Tubura
+# Core", Kenya's "Retail" splits into "Asili - Cash (Walk-in)"/"(App)"...),
+# which is real signal, not noise, but would make hermetic tests fragile
+# against country-specific naming quirks that have nothing to do with what
+# each test is actually checking. Matches the existing bulk_uploader test
+# suite's own country/program literals (RW/Core, MW/Trees, KE/Retail) so
+# no test had to change to accommodate this.
+DIM_COUNTRIES = [
+    dict(country_id=1, country_code="MW", country_name="Malawi"),
+    dict(country_id=2, country_code="KE", country_name="Kenya"),
+    dict(country_id=3, country_code="RW", country_name="Rwanda"),
+    dict(country_id=4, country_code="ZM", country_name="Zambia"),
+]
+
+DIM_PROGRAMS = [
+    dict(program_id=1, country_code="MW", program_oaf_eq="Core", program_local_name="Core"),
+    dict(program_id=2, country_code="MW", program_oaf_eq="Retail", program_local_name="Retail"),
+    dict(program_id=3, country_code="MW", program_oaf_eq="AGF", program_local_name="Trees"),
+    dict(program_id=4, country_code="KE", program_oaf_eq="Core", program_local_name="Core"),
+    dict(program_id=5, country_code="KE", program_oaf_eq="Retail", program_local_name="Retail"),
+    dict(program_id=6, country_code="RW", program_oaf_eq="Core", program_local_name="Core"),
+    dict(program_id=7, country_code="ZM", program_oaf_eq="Carbon", program_local_name="Carbon"),
+]
+
+DIM_SYSTEMS = [
+    dict(system_id=1, country_code="MW", program_local_name="Core", system_name="Fineract"),
+    dict(system_id=2, country_code="MW", program_local_name="Retail", system_name="Odoo"),
+    dict(system_id=3, country_code="MW", program_local_name="Trees", system_name="KOBO"),
+    dict(system_id=4, country_code="KE", program_local_name="Core", system_name="Fineract"),
+    dict(system_id=5, country_code="KE", program_local_name="Retail", system_name="Odoo"),
+    dict(system_id=6, country_code="RW", program_local_name="Core", system_name="Fineract"),
+    dict(system_id=7, country_code="ZM", program_local_name="Carbon", system_name="Commcare"),
+]
+
+
+def _season_rows(country_code: str, start_id: int) -> list[dict]:
+    """Winter (SR, May-Sep) + Summer (LR, Oct-Apr, crosses year) seasons for
+    5 years straddling *today* — generated relative to the real current
+    date, not hardcoded absolute years, so the "closest 3 seasons" fixture
+    stays valid whenever the test suite actually runs, not just on the day
+    this was written (matches the real DimSeason's own SR/LR naming and
+    month ranges, confirmed via the real mirrored table, 2026-09-03)."""
+    rows = []
+    season_id = start_id
+    this_year = date.today().year
+    for year in range(this_year - 2, this_year + 3):
+        rows.append(dict(
+            season_id=season_id, country_code=country_code, season_name="Winter Season",
+            local_name=f"SR{str(year)[-2:]}", rainfall_type="Winter",
+            season_label=f"SR{str(year)[-2:]}", season_year=year, season_year_label=str(year),
+            start_month=5, end_month=9, crosses_year=False,
+        ))
+        season_id += 1
+        rows.append(dict(
+            season_id=season_id, country_code=country_code, season_name="Summer Season",
+            local_name=f"LR{str(year + 1)[-2:]}", rainfall_type="Summer",
+            season_label=f"LR{str(year + 1)[-2:]}", season_year=year, season_year_label=f"{year}/{str(year + 1)[-2:]}",
+            start_month=10, end_month=4, crosses_year=True,
+        ))
+        season_id += 1
+    return rows
+
+
+DIM_SEASONS = _season_rows("MW", 1) + _season_rows("KE", 100)
+
 # (model, plain unqualified table name) — the plain name is needed
 # separately because Meta.db_table is now schema-qualified
 # ('analytics_mirror"."v_client_reach'), which Django's own table
@@ -151,6 +219,15 @@ def seed():
     SalesLine.objects.filter(source_transaction_id__startswith="SEED-").delete()
     for i, row in enumerate(SALES_LINES):
         SalesLine.objects.create(source_transaction_id=f"SEED-{i}", **row)
+
+    for row in DIM_COUNTRIES:
+        DimCountry.objects.update_or_create(country_id=row["country_id"], defaults=row)
+    for row in DIM_PROGRAMS:
+        DimProgram.objects.update_or_create(program_id=row["program_id"], defaults=row)
+    for row in DIM_SYSTEMS:
+        DimSystem.objects.update_or_create(system_id=row["system_id"], defaults=row)
+    for row in DIM_SEASONS:
+        DimSeason.objects.update_or_create(season_id=row["season_id"], defaults=row)
 
     for i, farmer in enumerate(FARMERS):
         BridgeClientSourceId.objects.update_or_create(

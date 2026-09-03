@@ -1,7 +1,7 @@
 # Wimbi — Jira Backlog (Working Inventory)
 
 **Status:** Living document — update status inline as work happens, this is a snapshot, not a report
-**Last updated:** 2026-09-02
+**Last updated:** 2026-09-03
 **Companion to:** `features_and_user_stories.md` (source of every epic/story below — read that file for full context per feature, not duplicated here), `delivery_strategy.md` §3 (the ticket-type/labeling conventions this follows), `architectural_decisions.md` (the "why" behind platform epics), `to_do.md` (the day-to-day "what's next" tracker — that one stays the natural, short-term action list; this one is the structured inventory of the whole backlog, current and future)
 
 ## Purpose
@@ -27,7 +27,10 @@ Not in `features_and_user_stories.md` (that doc is farmer-facing features only) 
 | `scope_queryset` — DB-level RBAC filter for aggregates | ✅ Done | `accounts/rbac.py` |
 | Search result cap + minimum query length (scale hardening) | ✅ Done | A real `q=g` search once returned a 113MB response and crashed the dev server — fixed same day, see ADR-010's 2026-09-02 update |
 | `hx-boost` / htmx-partial routing bug (blank Search page) | ✅ Done | Found on first real browser test; fixed same day |
-| Bulk Data Mapper frontend (column-to-glossary UI) | ⏳ Not Started | Next up — own plan, not yet written (Epic 18 below) |
+| Bulk Data Mapper frontend (column-to-glossary UI) | ✅ Done | Built 2026-09-03 — Epic 18 below |
+| Dark mode (switch-based, not just OS-preference) | ✅ Done | 2026-09-03 — `.dark`-scoped CSS variable overrides in `base.html`, `localStorage`-persisted, pre-paint script to avoid a flash of the wrong theme |
+| Collapsible sidebar with icons | ✅ Done | 2026-09-03 — app-wide (`base.html`), inline SVG icons, `localStorage`-persisted same as dark mode |
+| Glossary page (`/glossary/`) | ✅ Done | 2026-09-03 — built ahead of the catalog; see Epic 18's own new row below |
 
 ### EPIC P2: ANALYTICS Postgres Mirror
 **Status:** ✅ Done for Malawi · **ADRs:** 003, 006, 007
@@ -157,17 +160,19 @@ Not in `features_and_user_stories.md` (that doc is farmer-facing features only) 
 ## Part B: Adjacent Data Platform Features
 
 ### EPIC 18: Self-Service Bulk Data Mapper
-**Status:** 🔶 In Progress — v1.1 in build (2026-09-03). Full requirements in [bulk-uploader.md](bulk-uploader.md)
+**Status:** 🔶 In Progress — v1.1 built and live-UAT'd end to end (2026-09-03), first real full save completed (1,000-row Malawi registration file). Full requirements in [bulk-uploader.md](bulk-uploader.md)
 
 | Story | Status | Notes |
 |---|---|---|
 | BU: upload a Kobo-like dataset (CSV/Excel) | 🔶 In Progress | v1.1 — file upload only; Sheets and Snowflake/Dataiku connectors are v1.2+ |
-| BU: be guided to map my columns to the glossary | 🔶 In Progress | v1.1 — funnel-scoped dropdowns + exact-name-match pre-fill. "Conversationally"/AI-assisted is v1.2+ |
-| BU: see which of my columns didn't match anything | 🔶 In Progress | v1.1 — unmapped columns are visible in the mapping step; per-row validation shown in preview |
+| BU: be guided to map my columns to the glossary | ✅ Done | v1.1 — real cascading Country→Program→Source system dropdowns off `DimCountry`/`DimProgram`/`DimSystem` (not hardcoded lists), an explicit entities checklist (replacing an earlier single-guess "Data Type") that scopes both the dropdown and the save gate, exact-name-match pre-fill, a searchable combobox that excludes already-mapped variables, and a per-column Stats readout (% unique / % blank over every row). "Conversationally"/AI-assisted suggestions are still v1.2+ |
+| BU: see which of my columns didn't match anything | ✅ Done | v1.1 — unmapped columns are visible in the mapping step; per-row validation shown in preview, with a live required-fields checklist and progress tracker on the mapping page itself |
+| BU: capture data with no clean source id | ✅ Done | v1.1 — synthetic composite keys: combine 2+ of your own columns into an MD5-hashed id (`parsers.build_synthetic_key`), tagged "synthetic," mirroring `BRIDGE_CLIENT_SOURCE_IDS`'s own real fallback to composite matching. Not in the original catalog — built in response to a real "no clean id" case hit live |
 | DT: review/approve a proposed mapping before it lands in SOURCES | ⏳ Not Started | v1.2+ — deliberately deferred; with one power user there's nobody to review for yet |
 | DT: an already-approved mapping is suggested next time | ⏳ Not Started | v1.2+ |
 | DT: an accepted mapping generates/updates a SOURCES view | ⏳ Not Started | v1.2+ — the promotion ETL, the strategic payoff of this whole feature |
 | DT: log of who mapped what, when, approved/rejected | ⏳ Not Started | v1.2+ — v1.1 records uploader + timestamp + the mapping itself, but no approval events to log yet |
+| *(New, built ahead of catalog)* Browse the full variable glossary in-app | ✅ Done | 2026-09-03 — `/glossary/`, open to any logged-in user (not gated behind uploader access, since it's schema reference not farmer data); live search + shared/single-entity/save-gate filter chips. Came out of a full glossary review pass that also caught a real placement issue (`loan_name`→`loan_product_name`, logged as `upstream-gaps.md` GAP-005) |
 
 ### EPIC 19: AI-Assisted Superset Chart & Dashboard Builder
 **Status:** ⏳ Not Started (all 7 stories) — adjacent effort, not begun in this repo

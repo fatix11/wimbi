@@ -48,6 +48,33 @@ def test_dashboard_shows_all_countries_for_data_team(client, mirror_data):
     assert response.context["total_farmers"] == 6  # all fixture farmers
 
 
+def test_glossary_page_requires_login(client):
+    response = client.get("/glossary/")
+    assert response.status_code == 302
+    assert "/login/" in response.url
+
+
+def test_glossary_page_open_to_any_authenticated_user(client, mirror_data):
+    """No RBAC gate, unlike the bulk uploader's own dataset pages — this is
+    schema/definition reference, not farmer data, so any logged-in user
+    (uploader or not) can see it."""
+    login_as(client, "cc.malawi@oneacrefund.org")
+    response = client.get("/glossary/")
+    assert response.status_code == 200
+    assert response.context["entities"][0]["key"] == "client"
+    assert response.context["total_deduped"] < response.context["total_raw"]  # some names are shared
+    assert b"loan_product_name" in response.content
+
+
+def test_glossary_page_marks_shared_variables_with_the_other_entities(client, mirror_data):
+    login_as(client, "cc.malawi@oneacrefund.org")
+    response = client.get("/glossary/")
+    client_entity = next(e for e in response.context["entities"] if e["key"] == "client")
+    source_client_id = next(v for v in client_entity["variables"] if v["name"] == "source_client_id")
+    assert "Sale" in source_client_id["shared_with"]
+    assert "Client" not in source_client_id["shared_with"]  # never lists its own entity
+
+
 def test_search_page_scopes_results_to_country(client, mirror_data):
     login_as(client, "cc.malawi@oneacrefund.org")
     response = client.get("/search/", {"q": "GL-"})

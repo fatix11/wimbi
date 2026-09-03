@@ -86,15 +86,19 @@ CLIENT_CORE = [
     Variable("phone", "Phone", "With country code if available", tier=TIER_NICE_TO_HAVE),
     Variable("primary_site", "Primary site", "The client's main site/shop/nursery", tier=TIER_OPTIONAL),
     Variable("primary_source_system", "Primary source system", "The system this client is most associated with, e.g. KOBO, ODOO, FINERACT", tier=TIER_OPTIONAL),
-    Variable("source_system", "Source system (lineage)", "Which system THIS record came from — required so it can be traced and matched against other systems", required=True, tier=TIER_REQUIRED),
-    Variable("source_client_id", "Source client ID (lineage)", "This record's own unique identifier in its source system — the anchor MASTER uses to match this record against others", required=True, tier=TIER_REQUIRED),
+    Variable("source_system", "Source system", "Which system THIS record came from — required so it can be traced and matched against other systems", required=True, tier=TIER_REQUIRED),
+    Variable("source_client_id", "Source client ID", "This record's own unique identifier in its source system — the anchor MASTER uses to match this record against others", required=True, tier=TIER_REQUIRED),
 ]
 
 # Real place-types a transaction can happen at — per your own note, this is
 # important enough to know that it's now a funnel question (LOCATION_TYPES
 # below), not a per-row mapped column, matching how Country/Program already
 # work: a single upload is virtually always one place-type throughout.
-LOCATION_TYPES = ["Nursery", "Site", "Shop", "Warehouse", "Online", "Other"]
+# "Other" isn't a fixed 6th value here — it's handled the same way as
+# Program/Source system (views._resolve_other): a free-text escape hatch
+# whose typed value becomes the real stored location_type, not a literal
+# "Other" string.
+LOCATION_TYPES = ["Nursery", "Site", "Shop", "Warehouse", "Online"]
 
 ENTITIES: dict[str, Entity] = {
     "client": Entity(
@@ -108,7 +112,23 @@ ENTITIES: dict[str, Entity] = {
         name="Location",
         feeds="DIMENSIONS.DIM_LOCATION",
         variables=[
-            Variable("lowest_loc", "Lowest location", "The most specific place this happened — a Fineract site, an Odoo Retail shop, or a Kobo Trees nursery", tier=TIER_REQUIRED),
+            # Named by channel rather than one generic "Lowest location" —
+            # mirrors DIM_PEOPLE's own field_officer/shopkeeper/
+            # nursery_manager split (2026-09-03, on request): a single
+            # dataset can genuinely carry more than one of these at once
+            # (e.g. a file spanning both Site and Shop transactions), so a
+            # mapper needs to send each to its own column rather than one
+            # shared field only one channel's column could occupy at a time.
+            # Which of these IS DIM_LOCATION's lowest_loc for a given row is
+            # decided by the funnel's location_type answer, not re-asked
+            # here — a promotion-time (v1.2+) concern, not a v1.1 mapping
+            # ambiguity. Not tier=required for the same reason the three
+            # People roles aren't — only the channel(s) actually present in
+            # a given file apply.
+            Variable("nursery", "Nursery", "Nursery name/code — for Kobo Trees distributions", tier=TIER_NICE_TO_HAVE),
+            Variable("site", "Site", "Site name/code — for Fineract-sourced loans/savings", tier=TIER_NICE_TO_HAVE),
+            Variable("shop", "Shop", "Shop name/code — for Odoo Retail sales", tier=TIER_NICE_TO_HAVE),
+            Variable("warehouse", "Warehouse", "Warehouse name/code, where applicable", tier=TIER_NICE_TO_HAVE),
             Variable("region", "Region", "Highest level below country", tier=TIER_OPTIONAL),
             Variable("district", "District", "Below region", tier=TIER_OPTIONAL),
             Variable("sector", "Sector", "Below district — this is the level Malawi's Trees program calls \"EPA\" (Extension Planning Area)", tier=TIER_OPTIONAL),
@@ -143,7 +163,7 @@ ENTITIES: dict[str, Entity] = {
         variables=[
             Variable("source_transaction_id", "Transaction ID", "The smallest unit — one per product per order per client. Required for lineage", required=True, tier=TIER_REQUIRED),
             Variable("source_order_id", "Order ID", "Groups several transaction lines into one order, if the sale had multiple products", tier=TIER_OPTIONAL),
-            Variable("source_client_id", "Client ID (lineage)", "Which client this line belongs to, in the source system", tier=TIER_NICE_TO_HAVE),
+            Variable("source_client_id", "Client ID", "Which client this line belongs to, in the source system", tier=TIER_NICE_TO_HAVE),
             Variable("source_loan_id", "Loan ID", "If this sale was made on credit, the loan it's tied to", tier=TIER_OPTIONAL),
             Variable("product_name", "Product name", "What was sold on this line", tier=TIER_REQUIRED),
             Variable("product_category", "Product category", "A transaction-level attribute in the real warehouse, not a product master attribute — Kobo in particular varies category by transaction", tier=TIER_OPTIONAL),
@@ -180,7 +200,7 @@ ENTITIES: dict[str, Entity] = {
         feeds="FACTS.FACT_PURCHASE",
         variables=[
             Variable("source_purchase_id", "Purchase ID", "Required for lineage", required=True, tier=TIER_REQUIRED),
-            Variable("source_client_id", "Client ID (lineage)", "Which farmer this buyback is from", tier=TIER_NICE_TO_HAVE),
+            Variable("source_client_id", "Client ID", "Which farmer this buyback is from", tier=TIER_NICE_TO_HAVE),
             Variable("farmer_name", "Farmer name", "Kept as free text — buyback sheets don't record a field officer, so there's no third party to resolve this against", tier=TIER_NICE_TO_HAVE),
             Variable("group_name", "Group name", "If the farmer buys/sells as part of a group", tier=TIER_OPTIONAL),
             Variable("payment_reference", "Payment reference", "", tier=TIER_OPTIONAL),
@@ -200,9 +220,16 @@ ENTITIES: dict[str, Entity] = {
         variables=[
             Variable("ledger_type", "Ledger type", "Loan or Savings — the real table holds both; loan-specific fields are blank for a Savings row and vice versa", tier=TIER_OPTIONAL),
             Variable("source_loan_id", "Loan ID", "Required for lineage", required=True, tier=TIER_REQUIRED),
-            Variable("source_client_id", "Client ID (lineage)", "Who received the loan", tier=TIER_NICE_TO_HAVE),
+            Variable("source_client_id", "Client ID", "Who received the loan", tier=TIER_NICE_TO_HAVE),
             Variable("loan_account_number", "Loan account number", "", tier=TIER_OPTIONAL),
-            Variable("loan_name", "Loan name", "", tier=TIER_OPTIONAL),
+            # Renamed from "loan_name" (2026-09-03, glossary review) to line
+            # up with Sale's own loan_product_name — confirmed by the user
+            # that Fineract's real LOANNAME field is, in practice, the loan
+            # product's name, even though the DDL alone doesn't document it
+            # that way (FACT_LOAN has no column sourced from
+            # FINERACT_PRODUCT_LOAN_NAME the way FACT_SALE does) — see
+            # upstream-gaps.md GAP-005.
+            Variable("loan_product_name", "Loan product name", "", tier=TIER_OPTIONAL),
             Variable("loan_type", "Loan type", "", tier=TIER_NICE_TO_HAVE),
             Variable("loan_status", "Loan status", "", tier=TIER_OPTIONAL),
             Variable("group_name", "Group name", "If the loan is a group liability loan", tier=TIER_OPTIONAL),
@@ -231,7 +258,7 @@ ENTITIES: dict[str, Entity] = {
         feeds="FACTS.FACT_PAYMENT",
         variables=[
             Variable("source_transaction_id", "Transaction ID", "Required for lineage", required=True, tier=TIER_REQUIRED),
-            Variable("source_client_id", "Client ID (lineage)", "Who is paying", tier=TIER_NICE_TO_HAVE),
+            Variable("source_client_id", "Client ID", "Who is paying", tier=TIER_NICE_TO_HAVE),
             Variable("source_loan_id", "Loan ID", "Which loan this payment applies to, if any", tier=TIER_OPTIONAL),
             Variable("account_number", "Account number", "", tier=TIER_OPTIONAL),
             Variable("receipt_number", "Receipt number", "", tier=TIER_OPTIONAL),
@@ -264,45 +291,27 @@ ENTITIES: dict[str, Entity] = {
     ),
 }
 
-# The funnel's third question. Ported from OAF's live Google Form rather
-# than reinvented, extended with a few real entities the form doesn't ask
-# about directly (loans/payments/staff/buyback).
-DATA_TYPES = [
-    ("registration", "Registration", "client"),
-    ("enrollment", "Enrollment", "client"),
-    ("distributions", "Distributions", "sale"),
-    ("household_survey", "Household surveys", "client"),
-    ("geomapping_survey", "Geomapping surveys", "location"),
-    ("impact_survey", "Impact surveys", "client"),
-    ("buyback", "Buyback / purchases", "purchase"),
-    ("loans", "Loans", "loan"),
-    ("payments", "Payments / repayments", "payment"),
-    ("staff", "Staff", "people"),
-    ("other", "Other", "client"),
-]
+# The funnel's third question used to be a free-text "Data Type" that only
+# loosely implied an entity (e.g. "Distributions" -> Sale) — replaced
+# 2026-09-03 with an explicit multi-select of which entities a file
+# actually involves (a real upload routinely carries columns for several,
+# e.g. a Kobo distribution sheet has Client, Location, People, AND Sale
+# columns at once). This list decides both which variables the mapping
+# dropdown offers and what the save gate requires — no more guessing.
+ENTITY_CHOICES = [(key, entity.name) for key, entity in ENTITIES.items()]
 
-DATA_TYPE_ENTITY = {key: entity for key, _label, entity in DATA_TYPES}
-DEFAULT_ENTITY = "client"  # every real file stretch-tested so far carried at least some Client columns
-
-
-def entity_for_data_type(data_type: str) -> str:
-    """Data Type is optional at upload time — an uploader unsure what kind
-    of data this is shouldn't be blocked from uploading. Left blank (or
-    unrecognized), falls back to the most broadly-relevant entity rather
-    than raising."""
-    return DATA_TYPE_ENTITY.get(data_type, DEFAULT_ENTITY)
-
-# entities-private/samples/dims/Countries.csv — the 10 countries ANALYTICS
-# actually covers (also mirrored for real as analytics_mirror.DimCountry).
-COUNTRIES = [
-    ("MW", "Malawi"), ("ZM", "Zambia"), ("TZ", "Tanzania"), ("BI", "Burundi"),
-    ("RW", "Rwanda"), ("CD", "DRC"), ("NG", "Nigeria"), ("UG", "Uganda"),
-    ("KE", "Kenya"), ("ET", "Ethiopia"),
-]
-
-# The canonical OAF_EQ program names, matching the Google Form's own list
-# rather than the ~30 country-specific local names.
-PROGRAMS = ["Core", "Carbon", "Retail", "Trees", "Market Access", "Other"]
+# Country/Program/Source system used to be hardcoded lists here (the 10
+# countries from entities-private/samples/dims/Countries.csv, and the 6
+# canonical OAF_EQ program names). Replaced 2026-09-03: the real
+# DimCountry/DimProgram/DimSystem tables are already mirrored into
+# analytics_mirror and are the authoritative source — see
+# bulk_uploader.views._funnel_dims(), which queries them live rather than
+# this module holding a second, driftable copy. Kept the Google Form's
+# funnel *shape* (Country → Program → Source system), just sourced for
+# real now, with an "Other" free-text escape hatch at each level below
+# Country (Country's real 10-country list is exhaustive; Program/Source
+# system genuinely vary per country and a new one can show up before the
+# warehouse dim catches up).
 
 
 def variables_for(entity_key: str) -> list[Variable]:
@@ -340,6 +349,40 @@ def all_variables_deduped() -> list[Variable]:
 
 def required_variables(entity_key: str) -> list[str]:
     return [v.name for v in ENTITIES[entity_key].variables if v.required]
+
+
+def required_variables_for_entities(entity_keys: list[str]) -> list[str]:
+    """Union of required_variables across every selected entity — the save
+    gate for a multi-entity upload is the union of each entity's own
+    lineage requirement, not just one entity's."""
+    seen: list[str] = []
+    seen_set: set[str] = set()
+    for key in entity_keys:
+        for name in required_variables(key):
+            if name not in seen_set:
+                seen_set.add(name)
+                seen.append(name)
+    return seen
+
+
+def entities_grouped(entity_keys: list[str]) -> list[tuple[str, str, list[Variable]]]:
+    """(key, name, variables) for just the given entities, in ENTITIES'
+    own order — scopes the mapping dropdown and progress tracker to what
+    an upload actually involves, once the uploader has said so via the
+    entities checklist."""
+    return [(key, ENTITIES[key].name, ENTITIES[key].variables) for key in ENTITIES if key in entity_keys]
+
+
+def variables_deduped_for(entity_keys: list[str]) -> list[Variable]:
+    """Like all_variables_deduped, but scoped to just the given entities —
+    one entry per variable name, first occurrence wins in ENTITIES order."""
+    seen: dict[str, Variable] = {}
+    for key in ENTITIES:
+        if key not in entity_keys:
+            continue
+        for v in ENTITIES[key].variables:
+            seen.setdefault(v.name, v)
+    return list(seen.values())
 
 
 def suggest_mapping(columns: list[str], variables: list[Variable]) -> dict[str, str]:

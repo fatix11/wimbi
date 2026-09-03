@@ -39,13 +39,15 @@
 <script>
   const labels = JSON.parse(document.getElementById('program-labels-data').textContent);
   const counts = JSON.parse(document.getElementById('program-counts-data').textContent);
+  const rootStyle = getComputedStyle(document.documentElement);
+  const cssVar = (name) => rootStyle.getPropertyValue(name).trim();
   new Chart(document.getElementById('program-chart'), {
     type: 'bar',
     data: {
       labels: labels,
       datasets: [{
         data: counts,
-        backgroundColor: '#2a78d6',
+        backgroundColor: cssVar('--series-1'),
         borderRadius: 4,
         maxBarThickness: 48,
       }],
@@ -54,8 +56,8 @@
       responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        y: { beginAtZero: true, grid: { color: '#e1e0d9' }, ticks: { color: '#898781' } },
-        x: { grid: { display: false }, ticks: { color: '#52514e' } },
+        y: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { color: cssVar('--text-muted') } },
+        x: { grid: { display: false }, ticks: { color: cssVar('--text-secondary') } },
       },
     },
   });

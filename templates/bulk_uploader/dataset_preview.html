@@ -6,7 +6,7 @@
 
 <h1 class="text-xl font-semibold mt-2 mb-1">Preview and confirm</h1>
 <p class="text-sm mb-6" style="color: var(--text-secondary);">
-  Step 3 of 3 — {{ dataset.original_filename }} · {{ dataset.country_code }} · {{ dataset.program }} · {{ dataset.get_data_type_display }}
+  Step 3 of 3 — {{ dataset.original_filename }} · {{ dataset.country_code }} · {{ dataset.program }} · {{ dataset.entity_names }}
 </p>
 
 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -16,24 +16,24 @@
   </div>
   <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
     <div class="text-sm" style="color: var(--text-secondary);">Pass the quality gate</div>
-    <div class="text-2xl font-semibold mt-1" style="color: #006300;">{{ valid_count|intcomma }}</div>
+    <div class="text-2xl font-semibold mt-1" style="color: var(--success);">{{ valid_count|intcomma }}</div>
   </div>
   <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
     <div class="text-sm" style="color: var(--text-secondary);">Flagged</div>
-    <div class="text-2xl font-semibold mt-1" {% if invalid_count %}style="color: #b3261e;"{% endif %}>{{ invalid_count|intcomma }}</div>
+    <div class="text-2xl font-semibold mt-1" {% if invalid_count %}style="color: var(--error);"{% endif %}>{{ invalid_count|intcomma }}</div>
   </div>
 </div>
 
 {% if invalid_count %}
   <div class="rounded-lg border p-3 mb-4 text-sm" style="border-color: var(--border); background: var(--surface-1);">
-    {{ invalid_count|intcomma }} row{{ invalid_count|pluralize }} {{ invalid_count|pluralize:"is,are" }} missing a required field
-    ({{ required|join:", " }}). They're kept and flagged, not deleted — you can save the valid rows now and fix the rest at
+    {{ invalid_count|intcomma }} row{{ invalid_count|pluralize }} {{ invalid_count|pluralize:"is,are" }} missing at least one required field —
+    see which one(s) below. They're kept and flagged, not deleted — you can save the valid rows now and fix the rest at
     source, or go back and remap.
   </div>
 {% endif %}
 
 {% if not dataset.column_mapping %}
-  <div class="rounded-lg border p-3 mb-4 text-sm" style="border-color: var(--border); background: #fdecec; color: #b3261e;">
+  <div class="rounded-lg border p-3 mb-4 text-sm" style="border-color: var(--border); background: var(--error-bg); color: var(--error);">
     No columns are mapped yet — nothing would be saved. <a href="{% url 'dataset_map' dataset.pk %}" class="underline">Go back and map columns</a>.
   </div>
 {% endif %}
@@ -43,7 +43,11 @@
     <thead>
       <tr class="text-left border-b" style="border-color: var(--border); color: var(--text-secondary);">
         <th class="px-3 py-2 font-medium">#</th>
-        {% for variable in mapped_variables %}<th class="px-3 py-2 font-medium">{{ variable }}</th>{% endfor %}
+        {% for variable in mapped_variables %}
+          <th class="px-3 py-2 font-medium">
+            {{ variable }}{% if variable in synthetic_variable_names %} <span style="color: var(--text-muted); font-weight: normal;">(synthetic)</span>{% endif %}
+          </th>
+        {% endfor %}
         <th class="px-3 py-2 font-medium">Status</th>
       </tr>
     </thead>
@@ -54,9 +58,9 @@
           {% for cell in row.cells %}<td class="px-3 py-2">{{ cell }}</td>{% endfor %}
           <td class="px-3 py-2">
             {% if row.is_valid %}
-              <span style="color: #006300;">OK</span>
+              <span style="color: var(--success);">OK</span>
             {% else %}
-              <span style="color: #b3261e;">{{ row.validation_errors|join:", " }}</span>
+              <span style="color: var(--error);">{{ row.validation_errors|join:", " }}</span>
             {% endif %}
           </td>
         </tr>
@@ -79,7 +83,7 @@
       </button>
     </form>
   {% else %}
-    <span class="text-sm self-center" style="color: #006300;">Saved.</span>
+    <span class="text-sm self-center" style="color: var(--success);">Saved.</span>
   {% endif %}
 </div>
 {% endblock %}

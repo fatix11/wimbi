@@ -1,7 +1,7 @@
 # Wimbi — Upstream Data Gaps
 
 **Status:** Living document — tracks real data-quality/completeness issues found in **ANALYTICS** (the Snowflake warehouse Wimbi mirrors) while building and testing Wimbi. These are fixed at the source (the pipeline, or Superset's own reporting logic), not papered over in Wimbi — per `architectural_decisions.md` ADR-007, Wimbi should never locally re-derive a number that could diverge from what Superset shows from the same views. Owned by the user to work through; Wimbi's side of each entry (if any) is noted so it's easy to see what, if anything, needs to change here once the upstream fix lands.
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-03 (later still)
 **Companion to:** `architectural_decisions.md` (ADR-006/ADR-007 already named several of these gap *categories* before real examples existed; this doc is the concrete, evidence-backed instance log), `uat.md` (where these tend to get found)
 
 ## How to use this
@@ -81,3 +81,26 @@ Each entry: what's broken, real evidence (not a guess), where it surfaces in Wim
 **Suggested fix (upstream):** add `village`, `cell`, and `source_location_id` as real columns to `DIM_LOCATION` (and whichever `SOURCES`/`FACT` views need to carry them through) — the user's own stated intent, not a request to a data team.
 
 Related, same session: `loc_type` moved from a per-row Location variable to a **funnel-level question** in the bulk uploader (`UploadedDataset.location_type`) — a single upload is virtually always one place-type throughout (all nursery, all shop...), matching how Country/Program already work. No upstream change implied by this one; it's a Wimbi-side UX simplification only.
+
+---
+
+## GAP-005: Loan entity naming — `loan_name` vs `loan_product_name`, and "Loan" vs "Credit" as OAF's own vocabulary
+
+**Status:** 🔴 Open (a naming/design question, not a bug)
+**Discovered:** 2026-09-03, reviewing the full bulk-uploader variable glossary end to end
+**Surfaces in Wimbi:** the Loan entity's `loan_name` variable, and the "Loan" entity name itself
+
+**Evidence — these are two different real columns, not one field needing a name touch-up:**
+```
+FACT_LOAN.loan_name          ← Fineract's raw LOANNAME        (V_LOANS, sources_views.sql:134)
+FACT_SALE.loan_product_name  ← Fineract's FINERACT_PRODUCT_LOAN_NAME (V_SALES, sources_views.sql:326)
+```
+`FACT_LOAN` has no column at all sourced from anything like `FINERACT_PRODUCT_LOAN_NAME` — it does carry `source_product_id` (Fineract's `PRODUCT_ID`), but no product-*name* string. `LOANNAME` reads, from the DDL alone, like a per-loan-account label (Fineract lets an account carry its own name), not a documented product-template name.
+
+**The ask, reviewing the glossary:** rename Wimbi's `loan_name` → `loan_product_name` in the Loan entity, so it lines up by name with Sale's own `loan_product_name` (the two sounded like the same concept but weren't backed by the same source field per the DDL alone). **Resolved by the user**: confirmed that Fineract's real `LOANNAME` field is, in practice, the loan product's name — the DDL just doesn't document it that way. Renamed in `glossary.py` (2026-09-03). Still logged here because the *documentation* gap is real regardless of the rename: nothing in `entities/database` states that `LOANNAME` carries the product name, so anyone reading the DDL cold (the next person, or this session in six months) would draw the same "these look like two different fields" conclusion this review did.
+
+**Also flagged, deliberately not acted on:** the user's own observation that "Loan" may be the wrong entity name altogether — OAF's business is fundamentally about Sales, and credit is a financing mechanism for a sale, not a standalone banking product; "Credit" might be the more accurate entity name. Left exactly as-is for now, per explicit request.
+
+**Current Wimbi-side handling:** `glossary.py`'s Loan entity now uses `loan_product_name` (was `loan_name`).
+
+**Suggested fix (upstream):** a one-line comment on `V_LOANS`'/`FACT_LOAN`'s `LOANNAME`→`loan_name` mapping in `sources_views.sql`/`facts.sql` noting that this is, in practice, the loan product name — closing the documentation gap the DDL alone couldn't answer. The "Loan" vs "Credit" entity-naming question is separate and still fully open.

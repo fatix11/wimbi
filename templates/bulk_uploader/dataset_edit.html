@@ -6,11 +6,11 @@
 <h1 class="text-xl font-semibold mt-2 mb-1">Edit upload details</h1>
 <p class="text-sm mb-6" style="color: var(--text-secondary);">
   {{ dataset.original_filename }} — the file and any mapping you've already done stay as they are.
-  Changing Data Type resets validation, since it changes what's required.
+  Changing which entities are involved resets validation, since it changes what's required.
 </p>
 
 {% if error %}
-  <div class="mb-4 max-w-2xl text-sm rounded-md px-3 py-2" style="background: #fdecec; color: #b3261e;">{{ error }}</div>
+  <div class="mb-4 max-w-2xl text-sm rounded-md px-3 py-2" style="background: var(--error-bg); color: var(--error);">{{ error }}</div>
 {% endif %}
 
 <form method="post" class="max-w-2xl">
@@ -18,54 +18,70 @@
   <div class="rounded-lg border p-4 mb-4 space-y-4" style="border-color: var(--border); background: var(--surface-1);">
     <div>
       <label class="block text-sm font-medium mb-1" for="country_code">Country</label>
-      <select name="country_code" id="country_code" required
+      <select name="country_code" id="country_code" required data-initial="{{ dataset.country_code }}"
               class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
-        {% for code, name in countries %}
-          <option value="{{ code }}" {% if dataset.country_code == code %}selected{% endif %}>{{ name }}</option>
-        {% endfor %}
+        <option value="">Choose…</option>
+        {% for code, name in funnel_dims.countries %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
       </select>
     </div>
     <div>
       <label class="block text-sm font-medium mb-1" for="program">Program</label>
-      <select name="program" id="program" required
+      <select name="program" id="program" required data-initial="{{ dataset.program }}"
               class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
-        {% for program in programs %}
-          <option value="{{ program }}" {% if dataset.program == program %}selected{% endif %}>{{ program }}</option>
-        {% endfor %}
+        <option value="">Choose a country first…</option>
       </select>
+      <input type="text" name="program_other" id="program_other" value="{{ dataset.program }}"
+             placeholder="Type the program name" class="hidden w-full rounded-md border px-3 py-2 text-sm mt-1" style="border-color: var(--baseline);">
     </div>
     <div>
-      <label class="block text-sm font-medium mb-1" for="data_type">Data type <span style="color: var(--text-muted);">(optional)</span></label>
-      <select name="data_type" id="data_type"
+      <label class="block text-sm font-medium mb-1" for="source_system">Source system <span style="color: var(--text-muted);">(optional)</span></label>
+      <select name="source_system" id="source_system" data-initial="{{ dataset.source_system }}"
               class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
-        <option value="" {% if not dataset.data_type %}selected{% endif %}>Not sure yet…</option>
-        {% for key, label in data_types %}
-          <option value="{{ key }}" {% if dataset.data_type == key %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
+        <option value="">Choose a program first…</option>
       </select>
+      <input type="text" name="source_system_other" id="source_system_other" value="{{ dataset.source_system }}"
+             placeholder="Type the system name" class="hidden w-full rounded-md border px-3 py-2 text-sm mt-1" style="border-color: var(--baseline);">
+      <p class="text-xs mt-1" style="color: var(--text-muted);">If set, this becomes a locked value applied to every row on the mapping page.</p>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Which entities does this file involve? <span style="color: var(--text-muted);">(check one or more)</span></label>
+      <div class="space-y-1">
+        {% for key, name in entity_choices %}
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="entities" value="{{ key }}" {% if key in dataset.entities %}checked{% endif %}>
+            {{ name }}
+          </label>
+        {% endfor %}
+      </div>
     </div>
     <div>
       <label class="block text-sm font-medium mb-1" for="location_type">Location type <span style="color: var(--text-muted);">(optional)</span></label>
-      <select name="location_type" id="location_type"
+      <select name="location_type" id="location_type" data-initial="{{ dataset.location_type }}"
               class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
-        <option value="" {% if not dataset.location_type %}selected{% endif %}>Not sure yet…</option>
-        {% for t in location_types %}
-          <option value="{{ t }}" {% if dataset.location_type == t %}selected{% endif %}>{{ t }}</option>
-        {% endfor %}
+        <option value="">Not sure yet…</option>
+        {% for t in location_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        <option value="__other__">Other…</option>
+      </select>
+      <input type="text" name="location_type_other" id="location_type_other" value="{{ dataset.location_type }}"
+             placeholder="Type the location type" class="hidden w-full rounded-md border px-3 py-2 text-sm mt-1" style="border-color: var(--baseline);">
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="operational_year">Operational year <span style="color: var(--text-muted);">(optional)</span></label>
+      <select name="operational_year" id="operational_year" data-initial="{{ dataset.operational_year }}"
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        <option value="">Not sure yet…</option>
+        {% for y in funnel_dims.years %}<option value="{{ y }}">{{ y }}</option>{% endfor %}
       </select>
     </div>
     <div>
-      <label class="block text-sm font-medium mb-1" for="operational_year">Operational year</label>
-      <input type="text" name="operational_year" id="operational_year" value="{{ dataset.operational_year }}"
-             class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+      <label class="block text-sm font-medium mb-1" for="season">Season <span style="color: var(--text-muted);">(optional — the 3 closest to now for the chosen country)</span></label>
+      <select name="season" id="season" data-initial="{{ dataset.season }}"
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        <option value="">Choose a country first…</option>
+      </select>
     </div>
     <div>
-      <label class="block text-sm font-medium mb-1" for="season">Season <span style="color: var(--text-muted);">(if applicable)</span></label>
-      <input type="text" name="season" id="season" value="{{ dataset.season }}"
-             class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
-    </div>
-    <div>
-      <label class="block text-sm font-medium mb-1" for="notes">Any comment?</label>
+      <label class="block text-sm font-medium mb-1" for="notes">Tell us what this data upload is about, in a nutshell</label>
       <textarea name="notes" id="notes" rows="2"
                 class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">{{ dataset.notes }}</textarea>
     </div>
@@ -75,4 +91,83 @@
     Save and continue mapping
   </button>
 </form>
+
+{{ funnel_dims|json_script:"funnel-dims-data" }}
+<script>
+(function () {
+  var DIMS = JSON.parse(document.getElementById('funnel-dims-data').textContent);
+  var OTHER = '__other__';
+  var countrySel = document.getElementById('country_code');
+  var programSel = document.getElementById('program');
+  var programOther = document.getElementById('program_other');
+  var systemSel = document.getElementById('source_system');
+  var systemOther = document.getElementById('source_system_other');
+  var locationSel = document.getElementById('location_type');
+  var locationOther = document.getElementById('location_type_other');
+  var yearSel = document.getElementById('operational_year');
+  var seasonSel = document.getElementById('season');
+
+  function fillOptions(select, options, placeholder) {
+    var initial = select.dataset.initial || '';
+    var html = '<option value="">' + placeholder + '</option>';
+    options.forEach(function (o) { html += '<option value="' + o + '">' + o + '</option>'; });
+    html += '<option value="' + OTHER + '">Other…</option>';
+    select.innerHTML = html;
+    if (initial) select.value = options.indexOf(initial) !== -1 ? initial : OTHER;
+  }
+
+  function toggleOther(select, otherInput) {
+    otherInput.classList.toggle('hidden', select.value !== OTHER);
+  }
+
+  function refreshPrograms() {
+    var options = DIMS.programs_by_country[countrySel.value] || [];
+    fillOptions(programSel, options, options.length ? 'Choose…' : 'Choose a country first…');
+    toggleOther(programSel, programOther);
+    refreshSystems();
+  }
+  function refreshSystems() {
+    var key = countrySel.value + '||' + programSel.value;
+    var options = DIMS.systems_by_key[key] || [];
+    fillOptions(systemSel, options, options.length ? 'Choose…' : 'Choose a program first…');
+    toggleOther(systemSel, systemOther);
+  }
+  function refreshSeasons() {
+    var initial = seasonSel.dataset.initial || '';
+    var options = DIMS.seasons_by_country[countrySel.value] || [];
+    var html = '<option value="">Not applicable</option>';
+    var found = false;
+    options.forEach(function (o) {
+      html += '<option value="' + o.value + '">' + o.text + '</option>';
+      if (o.value === initial) found = true;
+    });
+    // Preserves a historical value not among the current "closest 3" —
+    // e.g. re-visiting an old draft months later — rather than silently
+    // dropping it.
+    if (initial && !found) html += '<option value="' + initial + '">' + initial + '</option>';
+    seasonSel.innerHTML = html;
+    seasonSel.value = initial || '';
+  }
+
+  countrySel.value = countrySel.dataset.initial || '';
+  countrySel.addEventListener('change', function () { refreshPrograms(); refreshSeasons(); });
+  programSel.addEventListener('change', function () { toggleOther(programSel, programOther); refreshSystems(); });
+  systemSel.addEventListener('change', function () { toggleOther(systemSel, systemOther); });
+  locationSel.addEventListener('change', function () { toggleOther(locationSel, locationOther); });
+
+  // location_type's options are static (not dim-driven), so just resolve
+  // its initial selection the same OTHER-fallback way, without a rebuild.
+  var locationInitial = locationSel.dataset.initial || '';
+  if (locationInitial) {
+    var knownLocationValues = Array.prototype.map.call(locationSel.options, function (o) { return o.value; });
+    locationSel.value = knownLocationValues.indexOf(locationInitial) !== -1 ? locationInitial : OTHER;
+  }
+
+  yearSel.value = yearSel.dataset.initial || '';
+
+  refreshPrograms();
+  refreshSeasons();
+  toggleOther(locationSel, locationOther);
+})();
+</script>
 {% endblock %}
