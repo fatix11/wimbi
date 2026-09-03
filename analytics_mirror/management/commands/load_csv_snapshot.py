@@ -199,6 +199,47 @@ DATASETS = {
             ColumnSpec("LOADED_AT", "loaded_at"),
         ],
     ),
+    "repayment_analysis": dict(
+        csv_path=DATA_RAW / "repayment_analysis.csv",
+        table="repayment_transaction",
+        required=["GL_CLIENT_ID"],
+        # 4.32M rows, comparable in scale to bridge/client_reach — see
+        # RepaymentTransaction's docstring (analytics_mirror/models.py).
+        chunk_size=10_000,
+        columns=[
+            ColumnSpec("GL_CLIENT_ID", "gl_client_id"),
+            ColumnSpec("CLIENT_NAME", "client_name"),
+            ColumnSpec("GENDER", "gender"),
+            ColumnSpec("PRIMARY_PROGRAM", "primary_program"),
+            ColumnSpec("TRANSACTION_DATE", "transaction_date"),
+            ColumnSpec("YEAR", "year"),
+            ColumnSpec("QUARTER", "quarter"),
+            ColumnSpec("MONTH_NAME", "month_name"),
+            ColumnSpec("YEAR_MONTH", "year_month"),
+            # Unlike sales_line/client_reach/etc., this model's `country`
+            # field stores the raw Snowflake string as-is (no to_iso ISO-2
+            # normalization) — see RepaymentTransaction in models.py.
+            ColumnSpec("COUNTRY", "country"),
+            ColumnSpec("REGION", "region"),
+            ColumnSpec("DISTRICT", "district"),
+            ColumnSpec("SECTOR", "sector"),
+            ColumnSpec("SITE", "site"),
+            ColumnSpec("ACCOUNT_TYPE", "account_type"),
+            ColumnSpec("TRANSACTION_TYPE", "transaction_type"),
+            ColumnSpec("PAYMENT_METHOD", "payment_method"),
+            ColumnSpec("PAYMENT_TYPE_RAW", "payment_type_raw"),
+            ColumnSpec("AMOUNT_LCY", "amount_lcy"),
+            ColumnSpec("CUMULATIVE_AMOUNT_LCY", "cumulative_amount_lcy"),
+            ColumnSpec("ACCOUNT_PRINCIPAL_LCY", "account_principal_lcy"),
+            ColumnSpec("PAYMENT_DIRECTION", "payment_direction"),
+            ColumnSpec("SOURCE_TRANSACTION_ID", "source_transaction_id"),
+            ColumnSpec("SOURCE_LOAN_ID", "source_loan_id"),
+            ColumnSpec("ACCOUNT_NUMBER", "account_number"),
+            ColumnSpec("RECEIPT_NUMBER", "receipt_number"),
+            ColumnSpec("REPAYMENT_PHONE", "repayment_phone"),
+            ColumnSpec("LOADED_AT", "loaded_at"),
+        ],
+    ),
 }
 
 

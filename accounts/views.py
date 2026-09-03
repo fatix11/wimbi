@@ -1,4 +1,7 @@
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -65,3 +68,31 @@ def me(request: Request) -> Response:
     if user is None:
         return Response({"error": "Not authenticated"}, status=401)
     return Response(_serialize_session_user(user))
+
+
+# --- HTML pages (ADR-010) ---------------------------------------------
+# Real Django CSRF protection applies here (no @csrf_exempt) — the login
+# form carries {% csrf_token %} and htmx carries it via base.html's
+# hx-headers. Same dev-stand-in-for-Keycloak posture as the JSON login
+# above: an email that resolves against the directory, no password check.
+
+def login_page(request):
+    if request.user.is_authenticated:
+        return redirect("dashboard_page")
+
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip()
+        user = get_or_provision_user(email) if email else None
+        if user is None:
+            return render(request, "login.html", {"error": "Unknown user", "email": email}, status=400)
+        login_user(request, user)
+        return redirect("dashboard_page")
+
+    return render(request, "login.html")
+
+
+@require_POST
+@login_required
+def logout_page(request):
+    logout_user(request)
+    return redirect("login_page")

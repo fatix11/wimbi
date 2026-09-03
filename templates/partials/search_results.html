@@ -1,0 +1,23 @@
+{% if too_short %}
+  <p class="text-sm" style="color: var(--text-muted);">Keep typing — at least 2 characters.</p>
+{% elif query and not results %}
+  <p class="text-sm" style="color: var(--text-secondary);">No farmers found for "{{ query }}".</p>
+{% elif results %}
+  {% if truncated %}
+    <p class="text-sm mb-2" style="color: var(--text-muted);">Showing the first 50 matches — refine your search for more precise results.</p>
+  {% endif %}
+  <div class="rounded-lg border divide-y" style="border-color: var(--border); background: var(--surface-1);">
+    {% for farmer in results %}
+      <a href="{% url 'farmer_profile_page' farmer.gl_client_id %}"
+         class="block px-4 py-3 hover:bg-black/5" hx-boost="true">
+        <div class="flex justify-between items-baseline">
+          <span class="font-medium">{{ farmer.full_name|default:"(no name on file)" }}</span>
+          <span class="text-xs" style="color: var(--text-muted);">{{ farmer.gl_client_id }}</span>
+        </div>
+        <div class="text-sm mt-0.5" style="color: var(--text-secondary);">
+          {{ farmer.country_code }} · {{ farmer.primary_program|default:"—" }}
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+{% endif %}

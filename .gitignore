@@ -25,5 +25,5 @@ node_modules/
 
 # OS
 .DS_Store
-data/raw/*.csv
+data/raw/**/*.csv
 !data/raw/.gitkeep

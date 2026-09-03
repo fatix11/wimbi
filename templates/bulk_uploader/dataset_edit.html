@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Edit upload details · Wimbi{% endblock %}
+{% block content %}
+<a href="{% url 'dataset_map' dataset.pk %}" hx-boost="true" class="text-sm" style="color: var(--text-secondary);">&larr; Back to mapping</a>
+
+<h1 class="text-xl font-semibold mt-2 mb-1">Edit upload details</h1>
+<p class="text-sm mb-6" style="color: var(--text-secondary);">
+  {{ dataset.original_filename }} — the file and any mapping you've already done stay as they are.
+  Changing Data Type resets validation, since it changes what's required.
+</p>
+
+{% if error %}
+  <div class="mb-4 max-w-2xl text-sm rounded-md px-3 py-2" style="background: #fdecec; color: #b3261e;">{{ error }}</div>
+{% endif %}
+
+<form method="post" class="max-w-2xl">
+  {% csrf_token %}
+  <div class="rounded-lg border p-4 mb-4 space-y-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div>
+      <label class="block text-sm font-medium mb-1" for="country_code">Country</label>
+      <select name="country_code" id="country_code" required
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        {% for code, name in countries %}
+          <option value="{{ code }}" {% if dataset.country_code == code %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="program">Program</label>
+      <select name="program" id="program" required
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        {% for program in programs %}
+          <option value="{{ program }}" {% if dataset.program == program %}selected{% endif %}>{{ program }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="data_type">Data type <span style="color: var(--text-muted);">(optional)</span></label>
+      <select name="data_type" id="data_type"
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        <option value="" {% if not dataset.data_type %}selected{% endif %}>Not sure yet…</option>
+        {% for key, label in data_types %}
+          <option value="{{ key }}" {% if dataset.data_type == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="location_type">Location type <span style="color: var(--text-muted);">(optional)</span></label>
+      <select name="location_type" id="location_type"
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        <option value="" {% if not dataset.location_type %}selected{% endif %}>Not sure yet…</option>
+        {% for t in location_types %}
+          <option value="{{ t }}" {% if dataset.location_type == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="operational_year">Operational year</label>
+      <input type="text" name="operational_year" id="operational_year" value="{{ dataset.operational_year }}"
+             class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="season">Season <span style="color: var(--text-muted);">(if applicable)</span></label>
+      <input type="text" name="season" id="season" value="{{ dataset.season }}"
+             class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="notes">Any comment?</label>
+      <textarea name="notes" id="notes" rows="2"
+                class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">{{ dataset.notes }}</textarea>
+    </div>
+  </div>
+
+  <button type="submit" class="rounded-md px-4 py-2 text-sm font-medium text-white" style="background: var(--series-1);">
+    Save and continue mapping
+  </button>
+</form>
+{% endblock %}

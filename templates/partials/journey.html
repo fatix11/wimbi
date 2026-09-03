@@ -1,0 +1,17 @@
+{% if not events %}
+  <p class="text-sm" style="color: var(--text-muted);">No journey events on file.</p>
+{% else %}
+  <ol class="space-y-3">
+    {% for event in events %}
+      <li class="rounded-lg border p-3" style="border-color: var(--border); background: var(--surface-1);">
+        <div class="flex justify-between items-baseline">
+          <span class="font-medium text-sm">{{ event.event_type }}</span>
+          <span class="text-xs" style="color: var(--text-muted);">{{ event.event_date }}</span>
+        </div>
+        <div class="text-sm mt-0.5" style="color: var(--text-secondary);">
+          {{ event.program|default:"—" }}{% if event.amount_lcy %} · {{ event.amount_lcy }} {{ event.currency_code }}{% endif %}
+        </div>
+      </li>
+    {% endfor %}
+  </ol>
+{% endif %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Search · Wimbi{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">Search farmers</h1>
+<input type="search" name="q" placeholder="Name or farmer ID…" value="{{ query }}"
+       class="w-full max-w-md rounded-md border px-3 py-2 text-sm mb-4"
+       style="border-color: var(--baseline);"
+       hx-get="{% url 'search_page' %}"
+       hx-trigger="keyup changed delay:300ms, search"
+       hx-target="#search-results"
+       hx-swap="innerHTML"
+       hx-push-url="true"
+       autofocus>
+<div id="search-results">
+  {% include "partials/search_results.html" %}
+</div>
+{% endblock %}

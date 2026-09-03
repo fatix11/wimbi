@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Dashboard · Wimbi{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<h1 class="text-xl font-semibold mb-1">Dashboard</h1>
+<p class="text-sm mb-6" style="color: var(--text-secondary);">Quick highlights, not a Superset replacement — see Superset for the full picture.</p>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-sm" style="color: var(--text-secondary);">Farmers in scope</div>
+    <div class="text-2xl font-semibold mt-1">{{ total_farmers|intcomma }}</div>
+  </div>
+  <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-sm" style="color: var(--text-secondary);">Total sales value (LCY)</div>
+    <div class="text-2xl font-semibold mt-1">{{ total_sales_lcy|floatformat:0|intcomma }}</div>
+  </div>
+  <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-sm" style="color: var(--text-secondary);">Active programs</div>
+    <div class="text-2xl font-semibold mt-1">{{ active_programs }}</div>
+  </div>
+  <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-sm" style="color: var(--text-secondary);">Activity, last 30 days</div>
+    <div class="text-2xl font-semibold mt-1">{{ recent_activity|intcomma }}</div>
+  </div>
+</div>
+
+<div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+  <h2 class="text-sm font-medium mb-4" style="color: var(--text-secondary);">Farmers by program</h2>
+  <canvas id="program-chart" height="90"></canvas>
+</div>
+
+{{ program_labels|json_script:"program-labels-data" }}
+{{ program_counts|json_script:"program-counts-data" }}
+<script>
+  const labels = JSON.parse(document.getElementById('program-labels-data').textContent);
+  const counts = JSON.parse(document.getElementById('program-counts-data').textContent);
+  new Chart(document.getElementById('program-chart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: counts,
+        backgroundColor: '#2a78d6',
+        borderRadius: 4,
+        maxBarThickness: 48,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: '#e1e0d9' }, ticks: { color: '#898781' } },
+        x: { grid: { display: false }, ticks: { color: '#52514e' } },
+      },
+    },
+  });
+</script>
+{% endblock %}

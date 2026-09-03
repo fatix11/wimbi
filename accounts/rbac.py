@@ -8,6 +8,8 @@ value, deliberately independent of which persona/group the session holds
 
 from typing import Iterable, Protocol
 
+from django.db.models import QuerySet
+
 from .session import SessionUser
 
 
@@ -27,3 +29,13 @@ def scope_farmers[T: HasCountryCode](user: SessionUser, farmers: Iterable[T]) ->
     if has_all_country_scope(user):
         return list(farmers)
     return [farmer for farmer in farmers if farmer.country_code == user.country]
+
+
+def scope_queryset[T](user: SessionUser, queryset: QuerySet[T]) -> QuerySet[T]:
+    """DB-level equivalent of scope_farmers, for aggregates over real row
+    counts (1.3M farmers, 1.5M journey events, 5M sales lines) where
+    materializing to a Python list first would be a genuine performance
+    mistake. Assumes `queryset`'s model has a `country_code` field."""
+    if has_all_country_scope(user):
+        return queryset
+    return queryset.filter(country_code=user.country)

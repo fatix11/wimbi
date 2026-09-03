@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}New upload · Wimbi{% endblock %}
+{% block content %}
+<a href="{% url 'dataset_list' %}" hx-boost="true" class="text-sm" style="color: var(--text-secondary);">&larr; Back to uploads</a>
+
+<h1 class="text-xl font-semibold mt-2 mb-1">New upload</h1>
+<p class="text-sm mb-6" style="color: var(--text-secondary);">
+  Step 1 of 3 — tell us what this data is, and pick the file. These answers scope which variables you'll map against next.
+</p>
+
+{% if error %}
+  <div class="mb-4 max-w-2xl text-sm rounded-md px-3 py-2" style="background: #fdecec; color: #b3261e;">{{ error }}</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="max-w-2xl">
+  {% csrf_token %}
+  <div class="rounded-lg border p-4 mb-4 space-y-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div>
+      <label class="block text-sm font-medium mb-1" for="country_code">Country</label>
+      <select name="country_code" id="country_code" required
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        <option value="">Choose…</option>
+        {% for code, name in countries %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="program">Program</label>
+      <select name="program" id="program" required
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        <option value="">Choose…</option>
+        {% for program in programs %}<option value="{{ program }}">{{ program }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="data_type">Data type <span style="color: var(--text-muted);">(optional — you can set this later)</span></label>
+      <select name="data_type" id="data_type"
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        <option value="">Not sure yet…</option>
+        {% for key, label in data_types %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="location_type">Location type <span style="color: var(--text-muted);">(optional — where these transactions happened: nursery, site, shop, warehouse, online...)</span></label>
+      <select name="location_type" id="location_type"
+              class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+        <option value="">Not sure yet…</option>
+        {% for t in location_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="operational_year">Operational year</label>
+      <input type="text" name="operational_year" id="operational_year" placeholder="e.g. 2026"
+             class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="season">Season <span style="color: var(--text-muted);">(if applicable)</span></label>
+      <input type="text" name="season" id="season" placeholder="e.g. LR26"
+             class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);">
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="notes">Any comment?</label>
+      <textarea name="notes" id="notes" rows="2"
+                class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--baseline);"></textarea>
+    </div>
+  </div>
+
+  <div class="rounded-lg border p-4 mb-4" style="border-color: var(--border); background: var(--surface-1);">
+    <label class="block text-sm font-medium mb-1" for="file">File</label>
+    <input type="file" name="file" id="file" accept=".csv,.xlsx,.xlsm" required class="w-full text-sm">
+    <p class="text-xs mt-2" style="color: var(--text-muted);">
+      CSV or Excel. Sheets links and Snowflake/Dataiku tables come in a later phase — for now, export and upload.
+    </p>
+  </div>
+
+  <button type="submit" class="rounded-md px-4 py-2 text-sm font-medium text-white" style="background: var(--series-1);">
+    Upload and continue
+  </button>
+</form>
+{% endblock %}

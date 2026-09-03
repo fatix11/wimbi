@@ -1,0 +1,40 @@
+{% if not lines %}
+  <p class="text-sm" style="color: var(--text-muted);">No sales line items on file.</p>
+{% else %}
+  {% if order_totals %}
+    <div class="rounded-lg border p-3 mb-3 text-sm" style="border-color: var(--border); background: var(--surface-1); color: var(--text-secondary);">
+      Per-line pricing isn't available for some line items on file (a known upstream data gap — see <code>upstream-gaps.md</code>). Order-level totals where known:
+      <ul class="mt-1 space-y-0.5">
+        {% for order in order_totals %}
+          <li>{{ order.sale_date|default:"—" }} — {{ order.total }} {{ order.currency }} across {{ order.line_count }} line item{{ order.line_count|pluralize }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+  <div class="overflow-x-auto rounded-lg border" style="border-color: var(--border); background: var(--surface-1);">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b" style="border-color: var(--border); color: var(--text-secondary);">
+          <th class="px-3 py-2 font-medium">Date</th>
+          <th class="px-3 py-2 font-medium">Product</th>
+          <th class="px-3 py-2 font-medium">Qty</th>
+          <th class="px-3 py-2 font-medium">Total</th>
+          <th class="px-3 py-2 font-medium">Field officer</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+          <tr class="border-b last:border-0" style="border-color: var(--border);">
+            <td class="px-3 py-2">{{ line.sale_date|default:"—" }}</td>
+            <td class="px-3 py-2">{{ line.product_name|default:"—" }}</td>
+            <td class="px-3 py-2">{{ line.quantity|default:"—" }}</td>
+            <td class="px-3 py-2">
+              {% if line.total_price_lcy %}{{ line.total_price_lcy }} {{ line.currency_code }}{% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-2">{{ line.field_officer|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}

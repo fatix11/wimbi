@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}{{ farmer.full_name|default:farmer.gl_client_id }} · Wimbi{% endblock %}
+{% block content %}
+<a href="{% url 'search_page' %}" hx-boost="true" class="text-sm" style="color: var(--text-secondary);">&larr; Back to search</a>
+
+<h1 class="text-xl font-semibold mt-2">{{ farmer.full_name|default:"(no name on file)" }}</h1>
+<p class="text-sm mb-6" style="color: var(--text-secondary);">{{ farmer.gl_client_id }} · {{ farmer.country_code }}</p>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-sm" style="color: var(--text-secondary);">Primary program</div>
+    <div class="text-lg font-medium mt-1">{{ farmer.primary_program|default:"—" }}</div>
+  </div>
+  <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-sm" style="color: var(--text-secondary);">Onboarded</div>
+    <div class="text-lg font-medium mt-1">{{ farmer.onboarded_on|default:"—" }}</div>
+  </div>
+  <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-sm" style="color: var(--text-secondary);">Total sales</div>
+    <div class="text-lg font-medium mt-1">
+      {% if farmer.total_sales_lcy %}{{ farmer.total_sales_lcy|floatformat:0|intcomma }}{% else %}—{% endif %}
+    </div>
+  </div>
+  <div class="rounded-lg border p-4" style="border-color: var(--border); background: var(--surface-1);">
+    <div class="text-sm" style="color: var(--text-secondary);">Repayment rate</div>
+    <div class="text-lg font-medium mt-1">
+      {% if farmer.repayment_rate_pct %}{{ farmer.repayment_rate_pct }}%{% else %}—{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div>
+    <h2 class="text-sm font-medium mb-2" style="color: var(--text-secondary);">Journey timeline</h2>
+    <div id="journey" hx-get="{% url 'journey_partial' farmer.gl_client_id %}" hx-trigger="load" hx-swap="innerHTML">
+      <p class="text-sm" style="color: var(--text-muted);">Loading…</p>
+    </div>
+  </div>
+  <div>
+    <h2 class="text-sm font-medium mb-2" style="color: var(--text-secondary);">Sales history</h2>
+    <div id="sales" hx-get="{% url 'sales_partial' farmer.gl_client_id %}" hx-trigger="load" hx-swap="innerHTML">
+      <p class="text-sm" style="color: var(--text-muted);">Loading…</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

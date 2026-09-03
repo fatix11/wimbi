@@ -16,7 +16,22 @@ from decimal import Decimal
 
 from django.db import connection
 
-from .models import BridgeClientSourceId, FarmerReach, JourneyEvent, SalesLine, SFEmployee
+from .models import (
+    BridgeClientSourceId,
+    DimCountry,
+    DimMCF,
+    DimProgram,
+    DimSeason,
+    DimSystem,
+    FarmerReach,
+    FOPerformance,
+    JourneyEvent,
+    LoanPortfolio,
+    ProgramSummary,
+    RepaymentTransaction,
+    SalesLine,
+    SFEmployee,
+)
 
 FARMERS = [
     dict(gl_client_id="GL-MW-00001", full_name="Grace Banda", country_code="MW",
@@ -59,6 +74,16 @@ SALES_LINES = [
          product_category="Tubes", quantity=Decimal("50"), unit_price_lcy=Decimal("370"),
          total_price_lcy=Decimal("18500"), currency_code="MWK", site="Zomba", district="Zomba",
          field_officer="Blessings Gondwe", derived_season="LR23"),
+    # Real Kobo-sourced tree sales can have a null per-line total_price_lcy
+    # while the order they belong to still has a real total_order_price_lcy
+    # — found live-testing farmer MW-00008737, 2026-09-02 (see
+    # _docs/upstream-gaps.md GAP-001). Kept here so the HTML sales table's
+    # per-order summary note has a regression case.
+    dict(gl_client_id="GL-MW-00003", sale_date=date(2023, 10, 21), product_name="Faidherbia Albida",
+         product_category="Tubes", quantity=Decimal("2550"), unit_price_lcy=None,
+         total_price_lcy=None, total_order_price_lcy=Decimal("49088"), currency_code="MWK",
+         site="Mzimba", district="Mzimba", field_officer="Thembisa Ziwa", source_system="KOBO",
+         derived_season="LR23"),
 ]
 
 # (model, plain unqualified table name) — the plain name is needed
@@ -71,6 +96,24 @@ MIRROR_MODELS = (
     (BridgeClientSourceId, "bridge_client_source_ids"),
     (SalesLine, "sales_line"),
     (SFEmployee, "sf_employees"),
+    # Added 2026-09-03 — empty tables only, no fixture seed data yet.
+    # Schemas verified via DESCRIBE VIEW + sample rows (data/raw/snowflake.sql),
+    # populated for real via a direct Snowflake-to-Postgres DBeaver transfer
+    # rather than the CSV loader this time (see architectural_decisions.md).
+    (LoanPortfolio, "loan_portfolio"),
+    (ProgramSummary, "program_summary"),
+    (RepaymentTransaction, "repayment_transaction"),
+    (FOPerformance, "fo_performance"),
+    # Added 2026-09-03 — replaces a DBeaver-auto-created uppercase-column
+    # version of these same 5 tables (dropped first, see
+    # ensure_analytics_tables' docstring update) so Django defines the
+    # schema and DBeaver only loads data into it, per the established
+    # pattern for every other real table in this mirror.
+    (DimCountry, "dim_country"),
+    (DimMCF, "dim_mcf"),
+    (DimProgram, "dim_program"),
+    (DimSeason, "dim_season"),
+    (DimSystem, "dim_system"),
 )
 MIRROR_SCHEMA = "analytics_mirror"
 

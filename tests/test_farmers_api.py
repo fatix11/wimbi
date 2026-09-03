@@ -17,6 +17,16 @@ def test_search_scopes_to_country(client, mirror_data):
     assert {row["country"] for row in response.json()} == {"MW"}
 
 
+def test_search_requires_minimum_query_length(client, mirror_data):
+    # A 1-character query once matched a huge fraction of the real
+    # 1.3M-farmer table and crashed the dev server rendering the response
+    # (see _docs/architectural_decisions.md ADR-010, 2026-09-02 update).
+    login_as(client, "cc.malawi@oneacrefund.org")
+    response = client.get("/api/farmers/", {"query": "a"})
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_search_finds_farmer_by_name(client, mirror_data):
     login_as(client, "cc.malawi@oneacrefund.org")
     response = client.get("/api/farmers/", {"query": "Grace"})
