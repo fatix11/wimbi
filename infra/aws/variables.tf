@@ -76,6 +76,12 @@ variable "db_max_allocated_storage_gb" {
   default = 200
 }
 
+variable "db_backup_retention_days" {
+  description = "Brand-new AWS accounts can land on a restrictive \"Free Plan\" that caps this below the usual default of 7 - if apply fails with a FreeTierRestrictionError on this field, lower it further (1, then 0 if needed) until it matches what your account's plan actually allows, or upgrade the account plan in Billing to remove the cap entirely."
+  type        = number
+  default     = 1
+}
+
 variable "db_multi_az" {
   description = "Option B is production-shaped — Multi-AZ on by default. Set false to cut RDS cost roughly in half if that's not needed yet."
   type        = bool
