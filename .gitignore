@@ -37,3 +37,7 @@ infra/aws/terraform.tfstate.backup
 infra/aws/*.tfvars
 !infra/aws/terraform.tfvars.example
 infra/aws/bulk_uploader_data.json
+
+# Claude Code — settings.json is shared project config (commit it);
+# settings.local.json holds personal-machine overrides only.
+.claude/settings.local.json
