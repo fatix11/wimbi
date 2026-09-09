@@ -72,17 +72,33 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private.id
 }
 
+# A publicly accessible RDS instance needs its ENI in a subnet whose route
+# table actually reaches the internet gateway. A public IP alone is not
+# enough: inbound still arrives (VPC-local routing), so the connection
+# looks like it is being attempted, but the reply has no route back out and
+# the client just times out. That failure is indistinguishable from a
+# firewall block at the client end - both surface as SQLSTATE 08001 - which
+# cost real debugging time here, so it is worth stating plainly.
+#
+# An earlier version made this group the union of public and private
+# subnets, on the theory that AWS's ModifyDBSubnetGroup API refuses to
+# remove a subnet an instance is actively using. That is true, but a union
+# does not help: RDS simply kept its ENI in the private subnet it was
+# already in. The working approach is a differently-named group holding
+# only public subnets, so the instance is genuinely relocated rather than
+# merely permitted to move. create_before_destroy sequences it: new group
+# created, instance modified onto it, old group dropped once unused.
+#
+# Bridge-period only. Reverting db_publicly_accessible to false swaps this
+# cleanly back to private-only - which is the intended end state once this
+# lives in OAF's own AWS account and Airbyte reaches it over VPC peering.
 resource "aws_db_subnet_group" "main" {
-  name = "${var.project}-${var.environment}-db-subnets"
-  # Adds the public subnets rather than swapping to them - AWS's
-  # ModifyDBSubnetGroup API refuses to remove a subnet the instance's ENI
-  # is actively using ("Some of the subnets to be deleted are currently in
-  # use"), so a straight swap fails on an already-running instance. Union
-  # of both avoids ever removing a subnet mid-use; the instance itself
-  # (publicly_accessible in rds.tf) decides whether it actually gets a
-  # public IP, this group just makes both kinds of subnet available to it.
-  # Bridge-period setting for OAF's external Airbyte to reach this without
-  # VPC peering - revert once this migrates into OAF's own AWS account.
-  subnet_ids = var.db_publicly_accessible ? concat(aws_subnet.public[*].id, aws_subnet.private[*].id) : aws_subnet.private[*].id
+  name = var.db_publicly_accessible ? "${var.project}-${var.environment}-db-subnets-public" : "${var.project}-${var.environment}-db-subnets"
+
+  subnet_ids = var.db_publicly_accessible ? aws_subnet.public[*].id : aws_subnet.private[*].id
   tags       = { Name = "${var.project}-${var.environment}-db-subnets" }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
