@@ -12,11 +12,28 @@ Full plan and the decisions behind this shape: `_docs/aws_migration.md` — read
 
 ## First-time setup
 
+**0. Bootstrap the state backend, once, ever.** Terraform's state (the record of what's actually been created) lives in S3 now, not as a local file in whatever CloudShell session happens to run `apply` — a genuinely different browser/login is a genuinely different `$HOME`, and local state got trapped in one session's storage once already before this was set up (see `aws_migration.md`, 2026-09-09). This step only needs running once, ever, per AWS account — skip it if the bucket/table already exist:
+
+```bash
+aws s3api create-bucket --bucket wimbi-terraform-state-<your-account-id> --region eu-north-1 --create-bucket-configuration LocationConstraint=eu-north-1
+aws s3api put-bucket-versioning --bucket wimbi-terraform-state-<your-account-id> --versioning-configuration Status=Enabled
+aws s3api put-bucket-encryption --bucket wimbi-terraform-state-<your-account-id> --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws s3api put-public-access-block --bucket wimbi-terraform-state-<your-account-id> --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
+aws dynamodb create-table --table-name wimbi-terraform-locks --attribute-definitions AttributeName=LockID,AttributeType=S --key-schema AttributeName=LockID,KeyType=HASH --billing-mode PAY_PER_REQUEST --region eu-north-1
+```
+
+(The bucket name in `versions.tf`'s `backend "s3"` block needs to match whatever you actually created here — it's hardcoded there since backend config blocks can't reference variables.)
+
+**Every other session, from here on:**
+
 ```bash
 cd infra/aws
 cp terraform.tfvars.example terraform.tfvars
 # edit terraform.tfvars: django_secret_key, db_password at minimum
 terraform init
+# if state already exists locally from before the backend was set up,
+# init will offer to migrate it into S3 - say yes, once
 terraform validate   # do this before plan/apply — see note above
 ```
 
