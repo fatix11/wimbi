@@ -1,10 +1,10 @@
 resource "aws_security_group" "alb" {
   name_prefix = "${var.project}-${var.environment}-alb-"
   vpc_id      = aws_vpc.main.id
-  description = "Public-facing ALB — the only thing in this stack open to the internet."
+  description = "Public-facing ALB - the only thing in this stack open to the internet."
 
   ingress {
-    description = "HTTP from anywhere (add a 443 rule once a TLS cert exists — see README)"
+    description = "HTTP from anywhere - add a 443 rule once a TLS cert exists, see README"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -28,7 +28,7 @@ resource "aws_security_group" "alb" {
 resource "aws_security_group" "ecs_tasks" {
   name_prefix = "${var.project}-${var.environment}-ecs-"
   vpc_id      = aws_vpc.main.id
-  description = "The app itself — even though it sits in a public subnet, only the ALB can reach it, nothing else."
+  description = "The app itself - even though it sits in a public subnet, only the ALB can reach it, nothing else."
 
   ingress {
     description     = "Only from the ALB"
@@ -55,7 +55,7 @@ resource "aws_security_group" "ecs_tasks" {
 resource "aws_security_group" "rds" {
   name_prefix = "${var.project}-${var.environment}-rds-"
   vpc_id      = aws_vpc.main.id
-  description = "Postgres — reachable only from the app's own tasks, plus OAF's Airbyte once peered. Never public."
+  description = "Postgres - reachable only from the apps own tasks, plus OAFs Airbyte once peered. Never public."
 
   ingress {
     description     = "The app itself"
@@ -68,7 +68,7 @@ resource "aws_security_group" "rds" {
   dynamic "ingress" {
     for_each = var.airbyte_source_cidr != null ? [var.airbyte_source_cidr] : []
     content {
-      description = "OAF's self-hosted Airbyte — requires the actual network path (VPC peering/VPN) to exist too, this rule alone isn't sufficient. See README."
+      description = "OAFs self-hosted Airbyte - requires the actual network path (VPC peering/VPN) to exist too, this rule alone is not sufficient. See README."
       from_port   = 5432
       to_port     = 5432
       protocol    = "tcp"
