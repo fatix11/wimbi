@@ -87,6 +87,17 @@ resource "aws_security_group" "rds" {
     }
   }
 
+  dynamic "ingress" {
+    for_each = var.enable_adminer ? [1] : []
+    content {
+      description     = "Adminer, running inside this VPC - reaches RDS by security group reference, same as the app itself, not by IP."
+      from_port       = 5432
+      to_port         = 5432
+      protocol        = "tcp"
+      security_groups = [aws_security_group.adminer[0].id]
+    }
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

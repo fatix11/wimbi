@@ -116,6 +116,25 @@ variable "db_admin_cidrs" {
   default = []
 }
 
+variable "enable_adminer" {
+  description = <<-EOT
+    Bridge-period debugging tool only: runs Adminer (a single-container
+    browser-based DB admin UI) as its own tiny ECS service, reachable on
+    port 8080 from db_admin_cidrs only. It connects to RDS the same way the
+    app does - a security group reference, not the public endpoint - so it
+    works regardless of db_publicly_accessible.
+
+    Real caveat, not hypothetical: SSL is still deferred (see
+    aws_migration.md), so Adminer's login form sends the RDS master
+    password in cleartext over the internet, narrowed to your one IP by
+    the security group but not encrypted in transit. Fine for a short
+    debugging session; turn this back to false when done rather than
+    leaving it running.
+  EOT
+  type    = bool
+  default = false
+}
+
 variable "db_multi_az" {
   description = "Option B is production-shaped — Multi-AZ on by default. Set false to cut RDS cost roughly in half if that's not needed yet."
   type        = bool
