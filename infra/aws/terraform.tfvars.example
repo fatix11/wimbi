@@ -23,7 +23,7 @@ django_allowed_hosts = ""
 # Bridge-period only (see aws_migration.md) — RDS needs a public endpoint
 # for OAF's external Airbyte to reach it without VPC peering. Revert to
 # false once this migrates into OAF's own AWS account.
-db_publicly_accessible = true
+# db_publicly_accessible = true
 
 # Fill in once you've confirmed OAF's Airbyte instance's outbound CIDR
 # (see README's "Connecting OAF's Airbyte" section). Until this is set,
