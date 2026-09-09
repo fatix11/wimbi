@@ -20,6 +20,13 @@ container_image = "<account-id>.dkr.ecr.eu-north-1.amazonaws.com/wimbi-prod:late
 # automatically — see ecs.tf).
 django_allowed_hosts = ""
 
-# Fill in once OAF confirms their Airbyte instance's outbound CIDR / you've
-# set up VPC peering (see README's "Connecting OAF's Airbyte" section).
+# Bridge-period only (see aws_migration.md) — RDS needs a public endpoint
+# for OAF's external Airbyte to reach it without VPC peering. Revert to
+# false once this migrates into OAF's own AWS account.
+db_publicly_accessible = true
+
+# Fill in once you've confirmed OAF's Airbyte instance's outbound CIDR
+# (see README's "Connecting OAF's Airbyte" section). Until this is set,
+# db_publicly_accessible alone does NOT open RDS to the internet — the
+# security group still blocks everything except the app's own tasks.
 # airbyte_source_cidr = "10.x.x.x/32"

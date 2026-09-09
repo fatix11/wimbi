@@ -73,7 +73,13 @@ resource "aws_route_table_association" "private" {
 }
 
 resource "aws_db_subnet_group" "main" {
-  name       = "${var.project}-${var.environment}-db-subnets"
-  subnet_ids = aws_subnet.private[*].id
+  name = "${var.project}-${var.environment}-db-subnets"
+  # Public subnets only when db_publicly_accessible is true - a DB instance
+  # needs a route to the internet gateway to actually be reachable from
+  # outside the VPC (the private subnets deliberately have no such route),
+  # so "publicly_accessible = true" alone on the instance isn't sufficient.
+  # Bridge-period setting for OAF's external Airbyte to reach this without
+  # VPC peering - revert once this migrates into OAF's own AWS account.
+  subnet_ids = var.db_publicly_accessible ? aws_subnet.public[*].id : aws_subnet.private[*].id
   tags       = { Name = "${var.project}-${var.environment}-db-subnets" }
 }

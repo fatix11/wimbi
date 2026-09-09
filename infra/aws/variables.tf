@@ -82,6 +82,19 @@ variable "db_backup_retention_days" {
   default     = 1
 }
 
+variable "db_publicly_accessible" {
+  description = <<-EOT
+    Bridge-period setting only: gives RDS a public IP and moves it into the
+    public subnets, so OAF's external Airbyte can reach it without VPC
+    peering. The security group (airbyte_source_cidr) still controls who
+    can actually connect - this alone does not open it to the internet
+    generally. Revert to false once this migrates into OAF's own AWS
+    account with proper private connectivity.
+  EOT
+  type    = bool
+  default = false
+}
+
 variable "db_multi_az" {
   description = "Option B is production-shaped — Multi-AZ on by default. Set false to cut RDS cost roughly in half if that's not needed yet."
   type        = bool
