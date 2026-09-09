@@ -57,10 +57,11 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# No route out to the internet from here on purpose — RDS never needs one,
+# No route out to the internet from here by default — RDS never needs one,
 # and it's the one thing in this stack that must never be reachable from
 # the public internet. The only route added here will be the VPC peering
 # route to OAF's Airbyte VPC, once that connection exists (see README).
+# The one exception is the bridge-period IGW route below.
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
   tags   = { Name = "${var.project}-${var.environment}-private-rt" }
@@ -72,33 +73,56 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private.id
 }
 
-# A publicly accessible RDS instance needs its ENI in a subnet whose route
-# table actually reaches the internet gateway. A public IP alone is not
-# enough: inbound still arrives (VPC-local routing), so the connection
-# looks like it is being attempted, but the reply has no route back out and
-# the client just times out. That failure is indistinguishable from a
-# firewall block at the client end - both surface as SQLSTATE 08001 - which
-# cost real debugging time here, so it is worth stating plainly.
+# READ THIS BEFORE PUTTING ANYTHING NEW IN A "PRIVATE" SUBNET.
 #
-# An earlier version made this group the union of public and private
-# subnets, on the theory that AWS's ModifyDBSubnetGroup API refuses to
-# remove a subnet an instance is actively using. That is true, but a union
-# does not help: RDS simply kept its ENI in the private subnet it was
-# already in. The working approach is a differently-named group holding
-# only public subnets, so the instance is genuinely relocated rather than
-# merely permitted to move. create_before_destroy sequences it: new group
-# created, instance modified onto it, old group dropped once unused.
+# While db_publicly_accessible is true, the private subnets are not private:
+# this route gives them a path to the internet gateway, so anything placed
+# there can reach the internet and, with a public IP plus a permissive
+# security group, be reached from it. Today RDS is the only occupant, its
+# inbound is restricted to the app's own tasks plus airbyte_source_cidrs,
+# and it already carries a public IP by explicit choice - so the practical
+# exposure added here is close to nil. The hazard is future work trusting
+# the subnet name instead of this file.
 #
-# Bridge-period only. Reverting db_publicly_accessible to false swaps this
-# cleanly back to private-only - which is the intended end state once this
-# lives in OAF's own AWS account and Airbyte reaches it over VPC peering.
+# Why the route rather than moving RDS into the real public subnets, which
+# would be the cleaner shape: RDS will not do it. ModifyDBInstance's
+# DBSubnetGroupName parameter exists to move an instance to a *different
+# VPC*, and rejects a same-VPC subnet group with
+# "InvalidVPCNetworkStateFault: ... Choose a DB subnet group in different
+# VPC". Confirmed the hard way on 2026-09-09 - two Terraform applies and
+# the console's own modify flow all failed identically. A snapshot-restore
+# onto a new instance would work but changes the endpoint hostname and
+# rebuilds the database, which is not worth it for a few weeks of bridge.
+#
+# A publicly accessible instance needs its subnet's route table to reach an
+# IGW; without it the inbound SYN arrives fine over VPC-local routing (so
+# flow logs can even show it being allowed or rejected) but the reply has
+# no way back out, and the client sees a plain timeout. That surfaces as
+# SQLSTATE 08001 - identical to a firewall block, which is exactly what
+# sent this debugging session down the wrong path for a while.
+#
+# Ends with the bridge: setting db_publicly_accessible = false removes this
+# route and the private subnets become genuinely private again.
+resource "aws_route" "private_igw_bridge" {
+  count                  = var.db_publicly_accessible ? 1 : 0
+  route_table_id         = aws_route_table.private.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.main.id
+}
+
+# Private subnets only, unconditionally - reachability for OAF's Airbyte is
+# handled by aws_route.private_igw_bridge above, not by subnet placement.
+#
+# Two earlier attempts to vary this by db_publicly_accessible are worth not
+# repeating. Making it the union of public and private did nothing: RDS
+# keeps its ENI wherever it already is and simply ignores newly available
+# subnets. Swapping it to public-only cannot work either, because RDS
+# refuses same-VPC subnet group changes outright (see the route above).
+# Since the instance can never actually move, the group's membership has no
+# bearing on connectivity, and the honest thing is to leave it describing
+# where RDS genuinely lives.
 resource "aws_db_subnet_group" "main" {
-  name = var.db_publicly_accessible ? "${var.project}-${var.environment}-db-subnets-public" : "${var.project}-${var.environment}-db-subnets"
-
-  subnet_ids = var.db_publicly_accessible ? aws_subnet.public[*].id : aws_subnet.private[*].id
+  name       = "${var.project}-${var.environment}-db-subnets"
+  subnet_ids = aws_subnet.private[*].id
   tags       = { Name = "${var.project}-${var.environment}-db-subnets" }
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
