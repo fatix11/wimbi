@@ -25,8 +25,10 @@ django_allowed_hosts = ""
 # false once this migrates into OAF's own AWS account.
 # db_publicly_accessible = true
 
-# Fill in once you've confirmed OAF's Airbyte instance's outbound CIDR
-# (see README's "Connecting OAF's Airbyte" section). Until this is set,
-# db_publicly_accessible alone does NOT open RDS to the internet — the
-# security group still blocks everything except the app's own tasks.
-# airbyte_source_cidr = "10.x.x.x/32"
+# The addresses OAF's Airbyte actually connects from, found via VPC Flow
+# Logs (see README's "Connecting OAF's Airbyte" section). Until this is
+# set, db_publicly_accessible alone does NOT open RDS to the internet —
+# the security group still blocks everything except the app's own tasks.
+# A list because observed egress used more than one address; see the
+# variable's own note on when this can go stale.
+# airbyte_source_cidrs = ["52.214.150.190/32", "54.229.101.211/32"]

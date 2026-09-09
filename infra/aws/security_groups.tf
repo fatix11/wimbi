@@ -66,13 +66,13 @@ resource "aws_security_group" "rds" {
   }
 
   dynamic "ingress" {
-    for_each = var.airbyte_source_cidr != null ? [var.airbyte_source_cidr] : []
+    for_each = length(var.airbyte_source_cidrs) > 0 ? [1] : []
     content {
-      description = "OAFs self-hosted Airbyte - requires the actual network path (VPC peering/VPN) to exist too, this rule alone is not sufficient. See README."
+      description = "OAFs self-hosted Airbyte, over the public RDS endpoint. Egress was observed from more than one address, see the variable for the staleness risk."
       from_port   = 5432
       to_port     = 5432
       protocol    = "tcp"
-      cidr_blocks = [ingress.value]
+      cidr_blocks = var.airbyte_source_cidrs
     }
   }
 

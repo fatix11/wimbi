@@ -30,16 +30,24 @@ variable "availability_zones" {
   default     = ["eu-north-1a", "eu-north-1b"]
 }
 
-variable "airbyte_source_cidr" {
+variable "airbyte_source_cidrs" {
   description = <<-EOT
-    CIDR range OAF's self-hosted Airbyte connects from, for the RDS security
-    group's inbound rule. Leave null to skip that rule for now (e.g. while
-    still setting up VPC peering — see infra/aws/README.md "Connecting
-    OAF's Airbyte" section; the security group rule alone doesn't create a
-    network path, peering/VPN does that separately).
+    CIDRs OAF's self-hosted Airbyte connects from, for the RDS security
+    group's inbound rule on 5432. A list, not a single value, because the
+    observed traffic came from more than one address (52.214.150.190 and
+    54.229.101.211, both AWS eu-west-1, ~3 minutes apart) - so Airbyte's
+    egress is not a single fixed IP. Discovered via VPC Flow Logs, see
+    flow_logs.tf and aws_migration.md.
+
+    KNOWN FRAGILITY: if those addresses are ephemeral worker IPs rather
+    than a fixed NAT gateway, this list goes stale the moment a worker
+    lands on an address not in it, and syncs start failing with a
+    connection timeout that looks like nothing changed. Confirm with
+    whoever runs Airbyte whether its egress is a stable NAT/EIP before
+    trusting this long-term. Empty list = no rule at all.
   EOT
-  type    = string
-  default = null
+  type    = list(string)
+  default = []
 }
 
 # --- Database -----------------------------------------------------------
@@ -86,7 +94,7 @@ variable "db_publicly_accessible" {
   description = <<-EOT
     Bridge-period setting only: gives RDS a public IP and moves it into the
     public subnets, so OAF's external Airbyte can reach it without VPC
-    peering. The security group (airbyte_source_cidr) still controls who
+    peering. The security group (airbyte_source_cidrs) still controls who
     can actually connect - this alone does not open it to the internet
     generally. Revert to false once this migrates into OAF's own AWS
     account with proper private connectivity.

@@ -2,7 +2,7 @@
 # DevOps/infra team access - REJECT-only keeps volume low (we only care
 # about blocked connection attempts, not all normal app/ALB traffic).
 # Short retention since this is a one-time discovery tool, not ongoing
-# monitoring. Safe to remove once airbyte_source_cidr is set and confirmed
+# monitoring. Safe to remove once airbyte_source_cidrs is set and confirmed
 # working, though cheap enough to just leave running too.
 
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {

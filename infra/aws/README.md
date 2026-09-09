@@ -96,11 +96,18 @@ python manage.py loaddata bulk_uploader_data.json
 
 ## 6. Connecting OAF's Airbyte
 
-OAF's Airbyte is self-hosted and already runs in AWS — the decision was to use this new RDS instance as an Airbyte **destination**, not to run Airbyte as part of this stack at all. Two things still need to happen, neither of them in this Terraform yet because they need details only OAF's side has:
+OAF's Airbyte is self-hosted and already runs in AWS — the decision was to use this new RDS instance as an Airbyte **destination**, not to run Airbyte as part of this stack at all.
 
-1. **VPC peering** — `aws_vpc_peering_connection` from this VPC (`terraform output vpc_id`) to OAF's Airbyte VPC, requiring their VPC ID and CIDR (and their side accepting the peering request if it's a different AWS account). Once accepted, add a route in `aws_route_table.private` (`terraform output private_route_table_id`) pointing OAF's VPC CIDR at the peering connection — that's the actual network path; add it as a new `aws_route` resource once you have those details, not something to guess at here.
-2. **Security group rule** — set `airbyte_source_cidr` in `terraform.tfvars` to OAF's Airbyte VPC CIDR and re-apply; this alone doesn't create connectivity (step 1 does), it just allows the traffic once the network path exists.
-3. **Airbyte's own destination config** — Postgres host = `terraform output rds_address`, port 5432, database `analytics_mirror`-schema-aware (see `analytics_mirror/seed_data.py`'s `MIRROR_SCHEMA`), a dedicated Airbyte-only DB user (not the app's own `wimbi` user) — create that user manually via `psql` once connectivity exists, scoped to just the `analytics_mirror` schema.
+**VPC peering was considered and dropped.** It's the better long-term shape (traffic never touches the public internet), but it needs OAF's VPC ID/CIDR and their side accepting the peering request — too much cross-team coordination for infrastructure that gets rebuilt in OAF's own AWS account in a few weeks anyway. The public-endpoint path below was chosen instead, deliberately, as a bridge. Revisit peering when this moves into OAF's account.
+
+1. **Public endpoint** — set `db_publicly_accessible = true` in `terraform.tfvars` and apply. This gives RDS a public IP and puts its subnet group in the public subnets (both are needed; the flag alone does nothing if the subnets have no internet gateway route). On its own this opens *nothing* — the security group still rejects everything but the app's own tasks.
+2. **Find Airbyte's outbound addresses** — you likely can't just ask (they sit with whoever runs Airbyte). `flow_logs.tf` enables REJECT-only VPC Flow Logs precisely so the *blocked* connection attempt identifies itself. Trigger a "Test the destination" in Airbyte, wait a few minutes, then:
+   ```bash
+   aws logs tail /vpc/wimbi-prod-flow-logs --since 15m --region eu-north-1 | awk '$9 == 5432'
+   ```
+   Field 9 is the destination port — filtering on 5432 separates real Postgres attempts from the constant background scanner noise any public IP attracts (scanners hit random ports once; Airbyte retries 5432 specifically, several packets at a time).
+3. **Security group rule** — put those addresses in `airbyte_source_cidrs` (a list — observed egress used more than one) and re-apply. See the variable's own note on when this can silently go stale.
+4. **Airbyte's own destination config** — host = `terraform output rds_address`, port 5432, database `wimbi`, schema `analytics_mirror`, SSL mode `require`, SSH tunnel method **No Tunnel** (there's no bastion in this design — Airbyte connects straight to the endpoint). Username `airbyte`, not the app's own `wimbi` master user: a dedicated role scoped to just the `analytics_mirror` schema, created via a one-off `ecs run-task` (see `_docs/aws_migration.md` for the exact command) rather than `psql`, since RDS isn't reachable from outside the VPC and the image has no psql client.
 
 ## Cost note
 
