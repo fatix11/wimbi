@@ -32,3 +32,8 @@ django_allowed_hosts = ""
 # A list because observed egress used more than one address; see the
 # variable's own note on when this can go stale.
 # airbyte_source_cidrs = ["52.214.150.190/32", "54.229.101.211/32"]
+
+# Your own IP, for direct admin access (DBeaver, psql) to the public RDS
+# endpoint. Separate from airbyte_source_cidrs on purpose - see the
+# variable's own note. Find yours with: curl -s https://checkip.amazonaws.com
+# db_admin_cidrs = ["203.0.113.42/32"]

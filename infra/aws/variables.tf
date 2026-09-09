@@ -103,6 +103,19 @@ variable "db_publicly_accessible" {
   default = false
 }
 
+variable "db_admin_cidrs" {
+  description = <<-EOT
+    CIDRs allowed direct admin access to RDS on 5432 (e.g. a DBeaver/psql
+    client from your own machine) - kept separate from airbyte_source_cidrs
+    on purpose. The two lists serve different people with different
+    lifetimes: this one changes when you change networks, Airbyte's changes
+    when its infrastructure does. Conflating them means neither can be
+    cleaned up independently. Empty list = no rule at all.
+  EOT
+  type    = list(string)
+  default = []
+}
+
 variable "db_multi_az" {
   description = "Option B is production-shaped — Multi-AZ on by default. Set false to cut RDS cost roughly in half if that's not needed yet."
   type        = bool

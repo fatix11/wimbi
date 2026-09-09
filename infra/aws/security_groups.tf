@@ -76,6 +76,17 @@ resource "aws_security_group" "rds" {
     }
   }
 
+  dynamic "ingress" {
+    for_each = length(var.db_admin_cidrs) > 0 ? [1] : []
+    content {
+      description = "Direct admin access, eg DBeaver, over the public RDS endpoint. Kept separate from Airbytes rule since the two change independently."
+      from_port   = 5432
+      to_port     = 5432
+      protocol    = "tcp"
+      cidr_blocks = var.db_admin_cidrs
+    }
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
