@@ -27,7 +27,9 @@ SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+# Comma-separated in production (the ALB's DNS name / a real domain, once
+# one exists) — see aws_migration.md. Defaults preserve local dev exactly.
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
 
 # Application definition
@@ -51,6 +53,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # In-process static file serving — no S3/CloudFront needed at this
+    # traffic level (aws_migration.md). Harmless locally: falls through to
+    # STATIC_ROOT, which is only populated after collectstatic runs.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -168,12 +174,30 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 
 # Auth
 # https://docs.djangoproject.com/en/6.1/ref/settings/#login-url
 
 LOGIN_URL = 'login_page'
+
+
+# HTTPS — off by default so this stays correct for both local dev (plain
+# HTTP) and the AWS ALB's first apply (HTTP-only until a domain + ACM cert
+# exist, see infra/aws/README.md). Flip DJANGO_HTTPS=True once the ALB has
+# a real TLS listener — turning this on before that exists would redirect
+# every request into a loop, since there'd be nothing terminating TLS yet.
+DJANGO_HTTPS = os.environ.get('DJANGO_HTTPS', 'False') == 'True'
+SECURE_SSL_REDIRECT = DJANGO_HTTPS
+SESSION_COOKIE_SECURE = DJANGO_HTTPS
+CSRF_COOKIE_SECURE = DJANGO_HTTPS
+SECURE_HSTS_SECONDS = 31536000 if DJANGO_HTTPS else 0
 
 
 # Email

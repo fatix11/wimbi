@@ -1,0 +1,5 @@
+# Shell scripts run inside Linux containers (Dockerfile) — a CRLF shebang
+# line breaks with "bad interpreter" errors. Force LF regardless of the
+# checking-out machine's core.autocrlf setting.
+*.sh text eol=lf
+Dockerfile text eol=lf

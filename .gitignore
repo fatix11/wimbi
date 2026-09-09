@@ -27,3 +27,13 @@ node_modules/
 .DS_Store
 data/raw/**/*.csv
 !data/raw/.gitkeep
+
+# Terraform (infra/aws/) — state and real secrets never get committed;
+# .terraform.lock.hcl DOES get committed (pins provider versions), so it's
+# deliberately not listed here.
+infra/aws/.terraform/
+infra/aws/terraform.tfstate
+infra/aws/terraform.tfstate.backup
+infra/aws/*.tfvars
+!infra/aws/terraform.tfvars.example
+infra/aws/bulk_uploader_data.json

@@ -8,6 +8,7 @@ Django==6.1
 django-cors-headers==4.9.0
 django-htmx==1.29.0
 djangorestframework==3.18.0
+whitenoise==6.11.0
 granian==2.8.2
 h11==0.16.0
 httpcore==1.0.9

@@ -1,0 +1,25 @@
+# Copy to terraform.tfvars (gitignored — never commit real secrets) and
+# fill in real values. See README.md for how to get container_image.
+
+aws_region  = "eu-north-1"
+environment = "prod"
+
+# Generate fresh: python -c "import secrets; print(secrets.token_urlsafe(50))"
+django_secret_key = ""
+
+# Generate a real random password — not the local docker-compose "wimbi"
+db_password = ""
+
+# Set after the first `docker build`/`docker push` — see README step 4.
+# Placeholder lets `terraform plan` run before an image exists; `apply`
+# will fail on the ECS service until this points at something real.
+container_image = "<account-id>.dkr.ecr.eu-north-1.amazonaws.com/wimbi-prod:latest"
+
+# Leave blank until the first apply gives you the ALB's DNS name, then set
+# it explicitly and re-apply (otherwise it defaults to that same DNS name
+# automatically — see ecs.tf).
+django_allowed_hosts = ""
+
+# Fill in once OAF confirms their Airbyte instance's outbound CIDR / you've
+# set up VPC peering (see README's "Connecting OAF's Airbyte" section).
+# airbyte_source_cidr = "10.x.x.x/32"
