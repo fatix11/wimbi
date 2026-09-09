@@ -50,4 +50,11 @@ resource "aws_flow_log" "main" {
   log_destination = aws_cloudwatch_log_group.vpc_flow_logs.arn
   traffic_type    = "REJECT"
   vpc_id          = aws_vpc.main.id
+
+  # 60s instead of the 600s default. While this is being used to chase a
+  # specific connection attempt, a 10-minute aggregation window makes
+  # "nothing logged yet" and "nothing was rejected" indistinguishable -
+  # which is the one distinction the log is here to make. Costs slightly
+  # more log volume; irrelevant at REJECT-only volumes.
+  max_aggregation_interval = 60
 }
