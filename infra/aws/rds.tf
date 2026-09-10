@@ -19,6 +19,14 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = var.db_publicly_accessible
 
+  # Without this, Terraform defers a change like instance_class to RDS's
+  # next maintenance window instead of applying it now - unhelpful for a
+  # solo/bridge-period app with no real users yet to disturb with a
+  # scheduled reboot, and actively wrong for the case that motivated this
+  # (needing an instance-class bump to take effect immediately, not
+  # whenever AWS next feels like it). Revisit once real users exist.
+  apply_immediately = true
+
   backup_retention_period = var.db_backup_retention_days
   backup_window           = "03:00-04:00"
   maintenance_window      = "mon:04:30-mon:05:30"
