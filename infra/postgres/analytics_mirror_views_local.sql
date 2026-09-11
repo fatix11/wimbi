@@ -632,3 +632,92 @@ SELECT 'v_client_reach' AS view_name, count(*) FROM analytics_mirror.v_client_re
 UNION ALL SELECT 'v_client_journey', count(*) FROM analytics_mirror.v_client_journey
 UNION ALL SELECT 'repayment_transaction', count(*) FROM analytics_mirror.repayment_transaction
 UNION ALL SELECT 'sf_employees', count(*) FROM analytics_mirror.sf_employees;
+
+-- ============================================================
+-- Fourth pass (2026-09-12) - sales_line, finally. Explicitly excluded
+-- from every earlier pass since local's old copy (2,301,490 rows) was
+-- known incomplete against the real ~12.78M total in V_SALES_DETAIL, and
+-- a proper fix was pending rather than something to paper over.
+--
+-- The fix: a new Snowflake view built specifically for this, sampling by
+-- a deliberately bounded gl_client_id range (MW-00000001 to MW-00199999)
+-- rather than an arbitrary/random cut - 1,809,577 rows, 155,886 distinct
+-- clients, 11.61 lines/client average, zero nulls on GL_CLIENT_ID or
+-- SOURCE_TRANSACTION_ID. Complete within its stated boundary, verified
+-- before touching anything, not assumed from the row count alone.
+--
+-- Real bonus found while verifying: LATITUDE/LONGITUDE here are native
+-- double precision, not the bigint-truncated version the original
+-- Airbyte-synced V_SALES_DETAIL carried (see the third-pass comment on
+-- dim_location, and sales_line's own docstring) - this sample sidesteps
+-- that precision-loss issue entirely. The ::float8 cast below is now a
+-- no-op for this source, kept only so the SQL still works unchanged if
+-- raw sales_line data ever gets swapped back to a bigint-typed source.
+--
+-- Old table had 2,301,490 rows; this replaces it with 1,809,577 - fewer
+-- total rows, but complete/coherent within its boundary rather than an
+-- unclear partial cut, which is what actually matters for feature work.
+-- ============================================================
+
+DROP TABLE analytics_mirror.sales_line;
+CREATE VIEW analytics_mirror.sales_line AS
+SELECT
+  ROW_NUMBER() OVER (ORDER BY "GL_CLIENT_ID", "SALE_DATE", "SOURCE_ORDER_ID", "PRODUCT_NAME") AS id,
+  "GL_CLIENT_ID"                     AS gl_client_id,
+  "CLIENT_NAME"                      AS client_name,
+  "GENDER"                           AS gender,
+  "CLIENT_PRIMARY_PROGRAM"           AS client_primary_program,
+  "SALE_DATE"                        AS sale_date,
+  "SALE_YEAR"                        AS sale_year,
+  "SALE_QUARTER"                     AS sale_quarter,
+  "SALE_MONTH"                       AS sale_month,
+  "YEAR_MONTH"                       AS year_month,
+  "SEASON"                           AS season,
+  "DERIVED_SEASON"                   AS derived_season,
+  analytics_mirror.to_iso_country("COUNTRY") AS country_code,
+  "REGION"                           AS region,
+  "DISTRICT"                         AS district,
+  "SECTOR"                           AS sector,
+  "SITE"                             AS site,
+  "LOC_TYPE"                         AS loc_type,
+  "LATITUDE"::float8                 AS latitude,
+  "LONGITUDE"::float8                AS longitude,
+  "LOC_PARENTS"                      AS loc_parents,
+  "PROGRAM"                          AS program,
+  "SOURCE_SYSTEM"                    AS source_system,
+  "SALE_CHANNEL"                     AS sale_channel,
+  "ORDER_TYPE"                       AS order_type,
+  "PAYMENT_TYPE"                     AS payment_type,
+  "IS_CREDIT"                        AS is_credit,
+  "FULFILLMENT_STATUS"               AS fulfillment_status,
+  "PRODUCT_NAME"                     AS product_name,
+  "PRODUCT_CATEGORY"                 AS product_category,
+  "QUANTITY"                         AS quantity,
+  "FIELD_OFFICER"                    AS field_officer,
+  "SHOPKEEPER"                       AS shopkeeper,
+  "NURSERY_MANAGER"                  AS nursery_manager,
+  "UNIT_PRICE_LCY"                   AS unit_price_lcy,
+  "TOTAL_PRICE_LCY"                  AS total_price_lcy,
+  "TOTAL_ORDER_PRICE_LCY"            AS total_order_price_lcy,
+  "TOTAL_PRICE_USD"                  AS total_price_usd,
+  "CURRENCY_CODE"                    AS currency_code,
+  "USD_RATE"                         AS usd_rate,
+  "SAP_USD_RATE"                     AS sap_usd_rate,
+  "RATE_EXACT_MATCH"                 AS rate_exact_match,
+  "REVENUE_LCY"                      AS revenue_lcy,
+  "REVENUE_USD"                      AS revenue_usd,
+  "LOCATION_KEY"                     AS location_key,
+  "PRODUCT_KEY"                      AS product_key,
+  "FIELD_OFFICER_KEY"                AS field_officer_key,
+  "SHOPKEEPER_KEY"                   AS shopkeeper_key,
+  "NURSERY_MGR_KEY"                  AS nursery_mgr_key,
+  "SOURCE_TRANSACTION_ID"            AS source_transaction_id,
+  "SOURCE_ORDER_ID"                  AS source_order_id,
+  "SOURCE_LOAN_ID"                   AS source_loan_id,
+  "CREATED_AT"                       AS created_at,
+  "FULFILLED_AT"                     AS fulfilled_at,
+  "LOADED_AT"                        AS loaded_at
+FROM analytics_mirror_raw.v_sales_detail_sample;
+
+-- Sanity check (fourth pass)
+SELECT 'sales_line' AS view_name, count(*) FROM analytics_mirror.sales_line;
