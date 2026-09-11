@@ -538,3 +538,161 @@ class DimSystem(models.Model):
     class Meta:
         managed = False
         db_table = 'analytics_mirror"."dim_system'
+
+
+class DimClient(models.Model):
+    """Mirrors DIM_CLIENT (1,305,491 rows, verified unique on gl_client_id).
+    Notable: has a real PHONE column, unlike V_CLIENT_REACH which has none
+    at all (see FarmerReach's docstring) - worth revisiting the deferred
+    search-by-phone story (ADR-006) against this table specifically before
+    assuming it's still blocked. Also carries COUNTRY and COUNTRY_CODE as
+    separate real columns already, so no ISO normalization needed here
+    (unlike the fields that derive country_code from a full-name COUNTRY
+    only, via analytics_mirror.to_iso_country())."""
+
+    gl_client_id = models.CharField(max_length=32, primary_key=True)
+    cluster_seq = models.IntegerField(null=True)
+    first_name = models.CharField(max_length=255, null=True)
+    last_name = models.CharField(max_length=255, null=True)
+    full_name = models.CharField(max_length=255, null=True)
+    phone = models.CharField(max_length=32, null=True)
+    national_id = models.CharField(max_length=64, null=True)
+    account_number = models.CharField(max_length=64, null=True)
+    fineract_id = models.CharField(max_length=64, null=True)
+    gender = models.CharField(max_length=5, null=True)
+    date_of_birth = models.DateField(null=True)
+    country = models.CharField(max_length=64, null=True)
+    country_code = models.CharField(max_length=8, null=True)
+    primary_source_system = models.CharField(max_length=32, null=True)
+    primary_program = models.CharField(max_length=64, null=True)
+    primary_site = models.CharField(max_length=255, null=True)
+    source_record_count = models.IntegerField(null=True)
+    is_singleton = models.BooleanField(null=True)
+    is_reviewed = models.BooleanField(null=True)
+    is_active = models.BooleanField(null=True)
+    created_ts = models.DateTimeField(null=True)
+    last_updated_ts = models.DateTimeField(null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'analytics_mirror"."dim_client'
+
+
+class DimDate(models.Model):
+    """Mirrors DIM_DATE (10,957 rows) - a standard calendar date dimension,
+    date_key as the real surrogate PK (verified unique)."""
+
+    date_key = models.IntegerField(primary_key=True)
+    date = models.DateField(null=True)
+    year = models.IntegerField(null=True)
+    quarter = models.IntegerField(null=True)
+    quarter_name = models.CharField(max_length=16, null=True)
+    month = models.IntegerField(null=True)
+    month_short = models.CharField(max_length=8, null=True)
+    month_name = models.CharField(max_length=16, null=True)
+    year_month_key = models.IntegerField(null=True)
+    year_month = models.CharField(max_length=16, null=True)
+    week_of_year = models.IntegerField(null=True)
+    day_of_year = models.IntegerField(null=True)
+    day_of_month = models.IntegerField(null=True)
+    day_of_week = models.IntegerField(null=True)
+    day_short = models.CharField(max_length=8, null=True)
+    day_name = models.CharField(max_length=16, null=True)
+    is_weekend = models.BooleanField(null=True)
+    is_weekday = models.BooleanField(null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'analytics_mirror"."dim_date'
+
+
+class DimExchangeRate(models.Model):
+    """Mirrors DIM_EXCHANGE_RATE (5,040 rows) - monthly per-country/currency
+    exchange rates. No single-column natural key in the real data (country
+    + year_month + target_currency together look like the natural
+    composite) - id is a ROW_NUMBER() surrogate in the view, same pattern
+    as the other keyless mirror tables (see analytics_mirror_views.sql's
+    own note on that)."""
+
+    country_id = models.IntegerField(null=True)
+    country_code = models.CharField(max_length=8, null=True)
+    year_month = models.CharField(max_length=16, null=True)
+    target_currency = models.CharField(max_length=8, null=True)
+    rate_exact = models.FloatField(null=True)
+    usd_rate = models.FloatField(null=True)
+    is_exact_match = models.BooleanField(null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'analytics_mirror"."dim_exchange_rate'
+
+
+class DimLocation(models.Model):
+    """Mirrors DIM_LOCATION (2,026 rows, verified unique on location_key)
+    - the real target of SalesLine's location_key. Carries real decimal
+    LATITUDE/LONGITUDE (verified against sample rows, e.g. -15.434839,
+    35.5545106) - unlike V_SALES_DETAIL's own bigint-typed lat/long, which
+    sales_line's view flagged as likely truncating real GPS precision.
+    This table is probably the better source for real map coordinates -
+    worth switching to before trusting sales_line's own lat/long for
+    display."""
+
+    location_key = models.CharField(max_length=64, primary_key=True)
+    country = models.CharField(max_length=64, null=True)
+    region = models.CharField(max_length=128, null=True)
+    district = models.CharField(max_length=128, null=True)
+    sector = models.CharField(max_length=128, null=True)
+    lowest_loc = models.CharField(max_length=255, null=True)
+    loc_type = models.CharField(max_length=32, null=True)
+    latitude = models.FloatField(null=True)
+    longitude = models.FloatField(null=True)
+    geopoint = models.CharField(max_length=255, null=True)
+    loc_parents = models.CharField(max_length=255, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'analytics_mirror"."dim_location'
+
+
+class DimPeople(models.Model):
+    """Mirrors DIM_PEOPLE (1,514 rows, verified unique on people_key) - the
+    real target of SalesLine's field_officer_key/shopkeeper_key/
+    nursery_mgr_key. Distinct from SFEmployee: this is the broader people
+    dimension across all source systems (Fineract, Odoo, etc.), not just
+    SuccessFactors staff - sf_employee_id/sf_payroll_id link the two where
+    applicable."""
+
+    people_key = models.CharField(max_length=64, primary_key=True)
+    full_name = models.CharField(max_length=255, null=True)
+    first_name = models.CharField(max_length=255, null=True)
+    last_name = models.CharField(max_length=255, null=True)
+    is_fo = models.BooleanField(null=True)
+    is_shopkeeper = models.BooleanField(null=True)
+    is_nursery_manager = models.BooleanField(null=True)
+    division = models.CharField(max_length=128, null=True)
+    source_system = models.CharField(max_length=32, null=True)
+    country = models.CharField(max_length=64, null=True)
+    email = models.EmailField(null=True)
+    fo_id = models.CharField(max_length=64, null=True)
+    location_id = models.CharField(max_length=64, null=True)
+    station_id = models.CharField(max_length=64, null=True)
+    sf_employee_id = models.CharField(max_length=64, null=True)
+    sf_payroll_id = models.CharField(max_length=64, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'analytics_mirror"."dim_people'
+
+
+class DimProduct(models.Model):
+    """Mirrors DIM_PRODUCT (143 rows, verified unique on product_key) - the
+    real target of SalesLine's product_key."""
+
+    product_key = models.CharField(max_length=64, primary_key=True)
+    product_name = models.CharField(max_length=255, null=True)
+    source_product_id = models.CharField(max_length=64, null=True)
+    source_system = models.CharField(max_length=32, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'analytics_mirror"."dim_product'
