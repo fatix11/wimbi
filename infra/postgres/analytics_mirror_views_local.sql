@@ -721,3 +721,170 @@ FROM analytics_mirror_raw.v_sales_detail_sample;
 
 -- Sanity check (fourth pass)
 SELECT 'sales_line' AS view_name, count(*) FROM analytics_mirror.sales_line;
+
+-- ============================================================
+-- Fifth pass (2026-09-12) - a real, severe performance bug found via
+-- actual frontend testing (curl-based smoke testing in earlier passes
+-- could never have caught this - it only shows up when a query filters
+-- by gl_client_id, which every farmer-scoped page does). Measured, not
+-- assumed, before and after:
+--
+--   get_farmer (v_client_reach, no window fn)  351ms  ->  0.3ms
+--   search (ILIKE '%name%' on v_client_reach)  2,433ms -> 38ms
+--   journey timeline (v_client_journey)        23,610ms -> 0.5ms
+--   sales history (sales_line)                 39,803ms -> 0.7ms
+--
+-- Root cause, confirmed via EXPLAIN ANALYZE: the three ROW_NUMBER()
+-- views (v_client_journey, sales_line, repayment_transaction) computed
+-- their surrogate id with a plain ORDER BY, no PARTITION BY. Postgres
+-- cannot push a WHERE gl_client_id = 'X' filter below a window function
+-- unless that column is in the PARTITION BY clause - so every single
+-- farmer-scoped lookup forced a full sort of the ENTIRE table (external
+-- disk merge sort, 878MB spilled for sales_line alone) before the filter
+-- could even apply. Fixed by adding PARTITION BY "GL_CLIENT_ID" to all
+-- three - Postgres can safely push the filter through when the filtered
+-- column is also the partition key, since restricting to one partition
+-- value doesn't change that partition's own row numbering. Ids are still
+-- unique within one farmer's result set, which is all that's ever
+-- actually needed (see the third-pass comment on this same point) - just
+-- no longer globally unique across the whole table, which nothing here
+-- relied on anyway.
+--
+-- Separately, and just as impactful: none of the raw tables landed via
+-- DBeaver/CREATE TABLE AS SELECT had ANY indexes - every gl_client_id
+-- lookup was a sequential scan regardless of the ROW_NUMBER() issue.
+-- Added a plain B-tree index per table for exact-match lookups, plus a
+-- pg_trgm GIN index on v_client_reach for the search page's ILIKE
+-- '%query%' pattern (a plain B-tree can't serve a leading-wildcard match
+-- at all).
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX IF NOT EXISTS idx_v_client_reach_gl_client_id ON analytics_mirror_raw.v_client_reach ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_v_client_journey_gl_client_id ON analytics_mirror_raw.v_client_journey ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_v_sales_detail_sample_gl_client_id ON analytics_mirror_raw.v_sales_detail_sample ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_v_repayment_analysis_gl_client_id ON analytics_mirror_raw.v_repayment_analysis ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_bridge_client_source_ids_gl_client_id ON analytics_mirror_raw.bridge_client_source_ids ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_dim_client_gl_client_id ON analytics_mirror_raw.dim_client ("GL_CLIENT_ID");
+
+CREATE INDEX IF NOT EXISTS idx_v_client_reach_full_name_trgm ON analytics_mirror_raw.v_client_reach USING gin ("FULL_NAME" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_v_client_reach_gl_client_id_trgm ON analytics_mirror_raw.v_client_reach USING gin ("GL_CLIENT_ID" gin_trgm_ops);
+
+DROP VIEW analytics_mirror.v_client_journey;
+CREATE VIEW analytics_mirror.v_client_journey AS
+SELECT
+  ROW_NUMBER() OVER (PARTITION BY "GL_CLIENT_ID" ORDER BY "EVENT_DATE", "EVENT_TYPE", "SOURCE_REF") AS id,
+  "GL_CLIENT_ID"                              AS gl_client_id,
+  "CLIENT_NAME"                               AS client_name,
+  "GENDER"                                    AS gender,
+  analytics_mirror.to_iso_country("COUNTRY")  AS country_code,
+  "PRIMARY_PROGRAM"                           AS primary_program,
+  "EVENT_TYPE"                                AS event_type,
+  "PROGRAM"                                   AS program,
+  "EVENT_DATE"                                AS event_date,
+  "LINE_COUNT"                                AS line_count,
+  "AMOUNT_LCY"                                AS amount_lcy,
+  "CURRENCY_CODE"                              AS currency_code,
+  "IS_CREDIT"                                  AS is_credit,
+  "SOURCE_REF"                                 AS source_ref
+FROM analytics_mirror_raw.v_client_journey;
+
+DROP VIEW analytics_mirror.repayment_transaction;
+CREATE VIEW analytics_mirror.repayment_transaction AS
+SELECT
+  ROW_NUMBER() OVER (PARTITION BY "GL_CLIENT_ID" ORDER BY "TRANSACTION_DATE", "SOURCE_TRANSACTION_ID") AS id,
+  "GL_CLIENT_ID"          AS gl_client_id,
+  "CLIENT_NAME"           AS client_name,
+  "GENDER"                AS gender,
+  "PRIMARY_PROGRAM"       AS primary_program,
+  "TRANSACTION_DATE"      AS transaction_date,
+  "YEAR"                  AS year,
+  "QUARTER"               AS quarter,
+  "MONTH_NAME"            AS month_name,
+  "YEAR_MONTH"            AS year_month,
+  "COUNTRY"               AS country,
+  "REGION"                AS region,
+  "DISTRICT"              AS district,
+  "SECTOR"                AS sector,
+  "SITE"                  AS site,
+  "ACCOUNT_TYPE"          AS account_type,
+  "TRANSACTION_TYPE"      AS transaction_type,
+  "PAYMENT_METHOD"        AS payment_method,
+  "PAYMENT_TYPE_RAW"      AS payment_type_raw,
+  "AMOUNT_LCY"            AS amount_lcy,
+  "CUMULATIVE_AMOUNT_LCY" AS cumulative_amount_lcy,
+  "ACCOUNT_PRINCIPAL_LCY" AS account_principal_lcy,
+  "PAYMENT_DIRECTION"     AS payment_direction,
+  "SOURCE_TRANSACTION_ID" AS source_transaction_id,
+  "SOURCE_LOAN_ID"        AS source_loan_id,
+  "ACCOUNT_NUMBER"        AS account_number,
+  "RECEIPT_NUMBER"        AS receipt_number,
+  "REPAYMENT_PHONE"       AS repayment_phone,
+  "LOADED_AT"             AS loaded_at
+FROM analytics_mirror_raw.v_repayment_analysis;
+
+DROP VIEW analytics_mirror.sales_line;
+CREATE VIEW analytics_mirror.sales_line AS
+SELECT
+  ROW_NUMBER() OVER (PARTITION BY "GL_CLIENT_ID" ORDER BY "SALE_DATE", "SOURCE_ORDER_ID", "PRODUCT_NAME") AS id,
+  "GL_CLIENT_ID"                     AS gl_client_id,
+  "CLIENT_NAME"                      AS client_name,
+  "GENDER"                           AS gender,
+  "CLIENT_PRIMARY_PROGRAM"           AS client_primary_program,
+  "SALE_DATE"                        AS sale_date,
+  "SALE_YEAR"                        AS sale_year,
+  "SALE_QUARTER"                     AS sale_quarter,
+  "SALE_MONTH"                       AS sale_month,
+  "YEAR_MONTH"                       AS year_month,
+  "SEASON"                           AS season,
+  "DERIVED_SEASON"                   AS derived_season,
+  analytics_mirror.to_iso_country("COUNTRY") AS country_code,
+  "REGION"                           AS region,
+  "DISTRICT"                         AS district,
+  "SECTOR"                           AS sector,
+  "SITE"                             AS site,
+  "LOC_TYPE"                         AS loc_type,
+  "LATITUDE"::float8                 AS latitude,
+  "LONGITUDE"::float8                AS longitude,
+  "LOC_PARENTS"                      AS loc_parents,
+  "PROGRAM"                          AS program,
+  "SOURCE_SYSTEM"                    AS source_system,
+  "SALE_CHANNEL"                     AS sale_channel,
+  "ORDER_TYPE"                       AS order_type,
+  "PAYMENT_TYPE"                     AS payment_type,
+  "IS_CREDIT"                        AS is_credit,
+  "FULFILLMENT_STATUS"               AS fulfillment_status,
+  "PRODUCT_NAME"                     AS product_name,
+  "PRODUCT_CATEGORY"                 AS product_category,
+  "QUANTITY"                         AS quantity,
+  "FIELD_OFFICER"                    AS field_officer,
+  "SHOPKEEPER"                       AS shopkeeper,
+  "NURSERY_MANAGER"                  AS nursery_manager,
+  "UNIT_PRICE_LCY"                   AS unit_price_lcy,
+  "TOTAL_PRICE_LCY"                  AS total_price_lcy,
+  "TOTAL_ORDER_PRICE_LCY"            AS total_order_price_lcy,
+  "TOTAL_PRICE_USD"                  AS total_price_usd,
+  "CURRENCY_CODE"                    AS currency_code,
+  "USD_RATE"                         AS usd_rate,
+  "SAP_USD_RATE"                     AS sap_usd_rate,
+  "RATE_EXACT_MATCH"                 AS rate_exact_match,
+  "REVENUE_LCY"                      AS revenue_lcy,
+  "REVENUE_USD"                      AS revenue_usd,
+  "LOCATION_KEY"                     AS location_key,
+  "PRODUCT_KEY"                      AS product_key,
+  "FIELD_OFFICER_KEY"                AS field_officer_key,
+  "SHOPKEEPER_KEY"                   AS shopkeeper_key,
+  "NURSERY_MGR_KEY"                  AS nursery_mgr_key,
+  "SOURCE_TRANSACTION_ID"            AS source_transaction_id,
+  "SOURCE_ORDER_ID"                  AS source_order_id,
+  "SOURCE_LOAN_ID"                   AS source_loan_id,
+  "CREATED_AT"                       AS created_at,
+  "FULFILLED_AT"                     AS fulfilled_at,
+  "LOADED_AT"                        AS loaded_at
+FROM analytics_mirror_raw.v_sales_detail_sample;
+
+-- Sanity check (fifth pass) - confirm real timings, not just correctness
+EXPLAIN ANALYZE SELECT * FROM analytics_mirror.v_client_reach WHERE gl_client_id = 'MW-00000001';
+EXPLAIN ANALYZE SELECT * FROM analytics_mirror.v_client_journey WHERE gl_client_id = 'MW-00000001' ORDER BY event_date;
+EXPLAIN ANALYZE SELECT * FROM analytics_mirror.sales_line WHERE gl_client_id = 'MW-00000001' ORDER BY sale_date DESC;
