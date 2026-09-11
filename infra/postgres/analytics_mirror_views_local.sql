@@ -324,6 +324,51 @@ SELECT
   "CURRENCY_CODE"    AS currency_code
 FROM analytics_mirror_raw.v_program_summary;
 
+DROP TABLE IF EXISTS analytics_mirror.loan_portfolio;
+CREATE VIEW analytics_mirror.loan_portfolio AS
+SELECT
+  ROW_NUMBER() OVER (ORDER BY "GL_CLIENT_ID", "DISBURSEMENT_DATE", "LOAN_ACCOUNT_NUMBER") AS id,
+  "GL_CLIENT_ID"         AS gl_client_id,
+  "CLIENT_NAME"          AS client_name,
+  "GENDER"               AS gender,
+  "PRIMARY_PROGRAM"      AS primary_program,
+  "DISBURSEMENT_DATE"    AS disbursement_date,
+  "DISBURSEMENT_YEAR"    AS disbursement_year,
+  "DISBURSEMENT_QUARTER" AS disbursement_quarter,
+  "DISBURSEMENT_MONTH"   AS disbursement_month,
+  "YEAR_MONTH"           AS year_month,
+  "COUNTRY"              AS country,
+  "REGION"               AS region,
+  "DISTRICT"             AS district,
+  "SECTOR"               AS sector,
+  "SITE"                 AS site,
+  "SOURCE_LOAN_ID"       AS source_loan_id,
+  "LOAN_ACCOUNT_NUMBER"  AS loan_account_number,
+  "LOAN_NAME"            AS loan_name,
+  "LOAN_TYPE"            AS loan_type,
+  "LOAN_STATUS"          AS loan_status,
+  "IS_DISBURSED"         AS is_disbursed,
+  "IS_CLOSED"            AS is_closed,
+  "GROUP_NAME"           AS group_name,
+  "SOURCE_PRODUCT_ID"    AS source_product_id,
+  "IS_AT_RISK"           AS is_at_risk,
+  "PRINCIPAL_LCY"        AS principal_lcy,
+  "PRINCIPAL_USD"        AS principal_usd,
+  "REPAID_LCY"           AS repaid_lcy,
+  "REPAID_USD"           AS repaid_usd,
+  "OUTSTANDING_LCY"      AS outstanding_lcy,
+  "OUTSTANDING_USD"      AS outstanding_usd,
+  "TOTAL_REPAID_LCY"     AS total_repaid_lcy,
+  "REPAYMENT_RATE_PCT"   AS repayment_rate_pct,
+  "CURRENCY_CODE"        AS currency_code,
+  "USD_EXCHANGE_RATE"    AS usd_exchange_rate,
+  "APPROVED_AT"          AS approved_at,
+  "DISBURSED_AT"         AS disbursed_at,
+  "MATURED_AT"           AS matured_at,
+  "DAYS_PAST_MATURITY"   AS days_past_maturity,
+  "LOADED_AT"            AS loaded_at
+FROM analytics_mirror_raw.v_loan_portfolio;
+
 -- Sanity check (second pass)
 SELECT 'dim_country' AS view_name, count(*) FROM analytics_mirror.dim_country
 UNION ALL SELECT 'dim_mcf', count(*) FROM analytics_mirror.dim_mcf
@@ -331,4 +376,259 @@ UNION ALL SELECT 'dim_program', count(*) FROM analytics_mirror.dim_program
 UNION ALL SELECT 'dim_season', count(*) FROM analytics_mirror.dim_season
 UNION ALL SELECT 'dim_system', count(*) FROM analytics_mirror.dim_system
 UNION ALL SELECT 'bridge_client_source_ids', count(*) FROM analytics_mirror.bridge_client_source_ids
-UNION ALL SELECT 'program_summary', count(*) FROM analytics_mirror.program_summary;
+UNION ALL SELECT 'program_summary', count(*) FROM analytics_mirror.program_summary
+UNION ALL SELECT 'loan_portfolio', count(*) FROM analytics_mirror.loan_portfolio;
+
+-- ============================================================
+-- Third pass (2026-09-11, same session) - v_client_reach, v_client_journey,
+-- repayment_transaction, sf_employees. Unlike the other tables in this
+-- file, these had no raw copy to build from - nothing had been DBeaver-
+-- copied down from AWS for them yet. Per explicit instruction, promoted
+-- their EXISTING real local mirror data into new Snowflake-shaped raw
+-- tables myself (via CREATE TABLE ... AS SELECT, reverse-mapping mirror's
+-- lowercase columns to the real uppercase Snowflake names), verified the
+-- row count survived the promotion unchanged, then only THEN dropped the
+-- original table and rebuilt it as a view - so the real data was never at
+-- risk, just relocated. sales_line/V_SALES_DETAIL is explicitly excluded
+-- from this pass - local's copy (2.3M rows) is known incomplete against
+-- the real ~12.78M, and a proper fix for that is still pending, not this.
+--
+-- One real limitation, not swept under the rug: v_client_reach and
+-- v_client_journey's mirror data already had country_code NORMALIZED
+-- (the original raw COUNTRY full name, e.g. "Malawi", was never stored
+-- anywhere locally - only the ISO result, e.g. "MW"). The promoted raw
+-- table's COUNTRY column holds that ISO code, not a true replica of the
+-- original raw value. This isn't a functional problem - to_iso_country()
+-- is idempotent on an already-ISO input (falls through to the "already a
+-- code" branch, uppercases and returns it unchanged) - but it does mean
+-- these two raw tables are an approximation, not a byte-perfect copy of
+-- what a real Snowflake sync would produce. repayment_transaction has no
+-- such gap - its country field was never normalized to begin with, so
+-- that promotion is fully faithful.
+--
+-- sf_employees' raw column names are INFERRED, not verified against any
+-- real source - no actual SF_EMPLOYEES raw table has ever existed
+-- anywhere, AWS included (SuccessFactors was never connected via Airbyte).
+-- Named to match this codebase's existing uppercase-snake convention for
+-- consistency; correct these if a real raw sync of this source ever
+-- happens and the actual column names turn out to differ.
+
+CREATE TABLE analytics_mirror_raw.v_client_reach AS
+SELECT
+  gl_client_id             AS "GL_CLIENT_ID",
+  full_name                AS "FULL_NAME",
+  gender                   AS "GENDER",
+  date_of_birth            AS "DATE_OF_BIRTH",
+  country_code             AS "COUNTRY",
+  primary_program          AS "PRIMARY_PROGRAM",
+  primary_site             AS "PRIMARY_SITE",
+  primary_source_system    AS "PRIMARY_SOURCE_SYSTEM",
+  source_record_count      AS "SOURCE_RECORD_COUNT",
+  is_singleton             AS "IS_SINGLETON",
+  has_sale                 AS "HAS_SALE",
+  has_loan                 AS "HAS_LOAN",
+  has_purchase             AS "HAS_PURCHASE",
+  is_multi_program         AS "IS_MULTI_PROGRAM",
+  first_sale_date          AS "FIRST_SALE_DATE",
+  last_sale_date           AS "LAST_SALE_DATE",
+  total_orders             AS "TOTAL_ORDERS",
+  programs_on_sale         AS "PROGRAMS_ON_SALE",
+  seasons_with_oaf         AS "SEASONS_WITH_OAF",
+  total_sales_lcy          AS "TOTAL_SALES_LCY",
+  first_loan_date          AS "FIRST_LOAN_DATE",
+  last_loan_date           AS "LAST_LOAN_DATE",
+  total_loans              AS "TOTAL_LOANS",
+  total_principal_lcy      AS "TOTAL_PRINCIPAL_LCY",
+  total_repaid_lcy         AS "TOTAL_REPAID_LCY",
+  total_outstanding_lcy    AS "TOTAL_OUTSTANDING_LCY",
+  repayment_rate_pct       AS "REPAYMENT_RATE_PCT",
+  first_purchase_date      AS "FIRST_PURCHASE_DATE",
+  last_purchase_date       AS "LAST_PURCHASE_DATE",
+  total_purchases          AS "TOTAL_PURCHASES",
+  total_purchase_lcy       AS "TOTAL_PURCHASE_LCY",
+  total_program_value_lcy  AS "TOTAL_PROGRAM_VALUE_LCY",
+  onboarded_on             AS "ONBOARDED_ON",
+  last_activity_date       AS "LAST_ACTIVITY_DATE",
+  days_sale_to_loan        AS "DAYS_SALE_TO_LOAN",
+  days_since_last_activity AS "DAYS_SINCE_LAST_ACTIVITY"
+FROM analytics_mirror.v_client_reach;
+
+DROP TABLE analytics_mirror.v_client_reach;
+CREATE VIEW analytics_mirror.v_client_reach AS
+SELECT
+  "GL_CLIENT_ID"                    AS gl_client_id,
+  "FULL_NAME"                       AS full_name,
+  "GENDER"                          AS gender,
+  "DATE_OF_BIRTH"                   AS date_of_birth,
+  analytics_mirror.to_iso_country("COUNTRY") AS country_code,
+  "PRIMARY_PROGRAM"                 AS primary_program,
+  "PRIMARY_SITE"                    AS primary_site,
+  "PRIMARY_SOURCE_SYSTEM"           AS primary_source_system,
+  "SOURCE_RECORD_COUNT"             AS source_record_count,
+  "IS_SINGLETON"                    AS is_singleton,
+  "HAS_SALE"                        AS has_sale,
+  "HAS_LOAN"                        AS has_loan,
+  "HAS_PURCHASE"                    AS has_purchase,
+  "IS_MULTI_PROGRAM"                AS is_multi_program,
+  "FIRST_SALE_DATE"                 AS first_sale_date,
+  "LAST_SALE_DATE"                  AS last_sale_date,
+  "TOTAL_ORDERS"                    AS total_orders,
+  "PROGRAMS_ON_SALE"                AS programs_on_sale,
+  "SEASONS_WITH_OAF"                AS seasons_with_oaf,
+  "TOTAL_SALES_LCY"                 AS total_sales_lcy,
+  "FIRST_LOAN_DATE"                 AS first_loan_date,
+  "LAST_LOAN_DATE"                  AS last_loan_date,
+  "TOTAL_LOANS"                     AS total_loans,
+  "TOTAL_PRINCIPAL_LCY"             AS total_principal_lcy,
+  "TOTAL_REPAID_LCY"                AS total_repaid_lcy,
+  "TOTAL_OUTSTANDING_LCY"           AS total_outstanding_lcy,
+  "REPAYMENT_RATE_PCT"              AS repayment_rate_pct,
+  "FIRST_PURCHASE_DATE"             AS first_purchase_date,
+  "LAST_PURCHASE_DATE"              AS last_purchase_date,
+  "TOTAL_PURCHASES"                 AS total_purchases,
+  "TOTAL_PURCHASE_LCY"              AS total_purchase_lcy,
+  "TOTAL_PROGRAM_VALUE_LCY"         AS total_program_value_lcy,
+  "ONBOARDED_ON"                    AS onboarded_on,
+  "LAST_ACTIVITY_DATE"              AS last_activity_date,
+  "DAYS_SALE_TO_LOAN"               AS days_sale_to_loan,
+  "DAYS_SINCE_LAST_ACTIVITY"        AS days_since_last_activity
+FROM analytics_mirror_raw.v_client_reach;
+
+CREATE TABLE analytics_mirror_raw.v_client_journey AS
+SELECT
+  gl_client_id    AS "GL_CLIENT_ID",
+  client_name     AS "CLIENT_NAME",
+  gender          AS "GENDER",
+  country_code    AS "COUNTRY",
+  primary_program AS "PRIMARY_PROGRAM",
+  event_type      AS "EVENT_TYPE",
+  program         AS "PROGRAM",
+  event_date      AS "EVENT_DATE",
+  line_count      AS "LINE_COUNT",
+  amount_lcy      AS "AMOUNT_LCY",
+  currency_code   AS "CURRENCY_CODE",
+  is_credit       AS "IS_CREDIT",
+  source_ref      AS "SOURCE_REF"
+FROM analytics_mirror.v_client_journey;
+
+DROP TABLE analytics_mirror.v_client_journey;
+CREATE VIEW analytics_mirror.v_client_journey AS
+SELECT
+  ROW_NUMBER() OVER (ORDER BY "GL_CLIENT_ID", "EVENT_DATE", "EVENT_TYPE", "SOURCE_REF") AS id,
+  "GL_CLIENT_ID"                              AS gl_client_id,
+  "CLIENT_NAME"                               AS client_name,
+  "GENDER"                                    AS gender,
+  analytics_mirror.to_iso_country("COUNTRY")  AS country_code,
+  "PRIMARY_PROGRAM"                           AS primary_program,
+  "EVENT_TYPE"                                AS event_type,
+  "PROGRAM"                                   AS program,
+  "EVENT_DATE"                                AS event_date,
+  "LINE_COUNT"                                AS line_count,
+  "AMOUNT_LCY"                                AS amount_lcy,
+  "CURRENCY_CODE"                              AS currency_code,
+  "IS_CREDIT"                                  AS is_credit,
+  "SOURCE_REF"                                 AS source_ref
+FROM analytics_mirror_raw.v_client_journey;
+
+CREATE TABLE analytics_mirror_raw.v_repayment_analysis AS
+SELECT
+  gl_client_id          AS "GL_CLIENT_ID",
+  client_name            AS "CLIENT_NAME",
+  gender                  AS "GENDER",
+  primary_program         AS "PRIMARY_PROGRAM",
+  transaction_date        AS "TRANSACTION_DATE",
+  year                    AS "YEAR",
+  quarter                 AS "QUARTER",
+  month_name              AS "MONTH_NAME",
+  year_month              AS "YEAR_MONTH",
+  country                 AS "COUNTRY",
+  region                  AS "REGION",
+  district                AS "DISTRICT",
+  sector                  AS "SECTOR",
+  site                    AS "SITE",
+  account_type            AS "ACCOUNT_TYPE",
+  transaction_type        AS "TRANSACTION_TYPE",
+  payment_method          AS "PAYMENT_METHOD",
+  payment_type_raw        AS "PAYMENT_TYPE_RAW",
+  amount_lcy              AS "AMOUNT_LCY",
+  cumulative_amount_lcy   AS "CUMULATIVE_AMOUNT_LCY",
+  account_principal_lcy   AS "ACCOUNT_PRINCIPAL_LCY",
+  payment_direction       AS "PAYMENT_DIRECTION",
+  source_transaction_id   AS "SOURCE_TRANSACTION_ID",
+  source_loan_id          AS "SOURCE_LOAN_ID",
+  account_number          AS "ACCOUNT_NUMBER",
+  receipt_number          AS "RECEIPT_NUMBER",
+  repayment_phone         AS "REPAYMENT_PHONE",
+  loaded_at               AS "LOADED_AT"
+FROM analytics_mirror.repayment_transaction;
+
+DROP TABLE analytics_mirror.repayment_transaction;
+CREATE VIEW analytics_mirror.repayment_transaction AS
+SELECT
+  ROW_NUMBER() OVER (ORDER BY "GL_CLIENT_ID", "TRANSACTION_DATE", "SOURCE_TRANSACTION_ID") AS id,
+  "GL_CLIENT_ID"          AS gl_client_id,
+  "CLIENT_NAME"           AS client_name,
+  "GENDER"                AS gender,
+  "PRIMARY_PROGRAM"       AS primary_program,
+  "TRANSACTION_DATE"      AS transaction_date,
+  "YEAR"                  AS year,
+  "QUARTER"               AS quarter,
+  "MONTH_NAME"            AS month_name,
+  "YEAR_MONTH"            AS year_month,
+  "COUNTRY"               AS country,
+  "REGION"                AS region,
+  "DISTRICT"              AS district,
+  "SECTOR"                AS sector,
+  "SITE"                  AS site,
+  "ACCOUNT_TYPE"          AS account_type,
+  "TRANSACTION_TYPE"      AS transaction_type,
+  "PAYMENT_METHOD"        AS payment_method,
+  "PAYMENT_TYPE_RAW"      AS payment_type_raw,
+  "AMOUNT_LCY"            AS amount_lcy,
+  "CUMULATIVE_AMOUNT_LCY" AS cumulative_amount_lcy,
+  "ACCOUNT_PRINCIPAL_LCY" AS account_principal_lcy,
+  "PAYMENT_DIRECTION"     AS payment_direction,
+  "SOURCE_TRANSACTION_ID" AS source_transaction_id,
+  "SOURCE_LOAN_ID"        AS source_loan_id,
+  "ACCOUNT_NUMBER"        AS account_number,
+  "RECEIPT_NUMBER"        AS receipt_number,
+  "REPAYMENT_PHONE"       AS repayment_phone,
+  "LOADED_AT"             AS loaded_at
+FROM analytics_mirror_raw.v_repayment_analysis;
+
+CREATE TABLE analytics_mirror_raw.sf_employees AS
+SELECT
+  email              AS "EMAIL",
+  full_name          AS "FULL_NAME",
+  department_code    AS "DEPARTMENT_CODE",
+  department_name    AS "DEPARTMENT_NAME",
+  location_code      AS "LOCATION_CODE",
+  location_name      AS "LOCATION_NAME",
+  work_location      AS "WORK_LOCATION",
+  country_code       AS "COUNTRY_CODE",
+  country_name       AS "COUNTRY_NAME",
+  is_active          AS "IS_ACTIVE",
+  last_updated_date  AS "LAST_UPDATED_DATE"
+FROM analytics_mirror.sf_employees;
+
+DROP TABLE analytics_mirror.sf_employees;
+CREATE VIEW analytics_mirror.sf_employees AS
+SELECT
+  "EMAIL"             AS email,
+  "FULL_NAME"         AS full_name,
+  "DEPARTMENT_CODE"   AS department_code,
+  "DEPARTMENT_NAME"   AS department_name,
+  "LOCATION_CODE"     AS location_code,
+  "LOCATION_NAME"     AS location_name,
+  "WORK_LOCATION"     AS work_location,
+  "COUNTRY_CODE"      AS country_code,
+  "COUNTRY_NAME"      AS country_name,
+  "IS_ACTIVE"         AS is_active,
+  "LAST_UPDATED_DATE" AS last_updated_date
+FROM analytics_mirror_raw.sf_employees;
+
+-- Sanity check (third pass)
+SELECT 'v_client_reach' AS view_name, count(*) FROM analytics_mirror.v_client_reach
+UNION ALL SELECT 'v_client_journey', count(*) FROM analytics_mirror.v_client_journey
+UNION ALL SELECT 'repayment_transaction', count(*) FROM analytics_mirror.repayment_transaction
+UNION ALL SELECT 'sf_employees', count(*) FROM analytics_mirror.sf_employees;
