@@ -7,15 +7,15 @@
 -- though the column names inside came through quoted-uppercase, same as
 -- AWS. Table-name casing differs by source tool; column casing doesn't.
 --
--- Scope of this pass, deliberately narrow: only tables where no existing
--- real local data was at risk - see _docs/local_vs_cloud.md and this
--- session's own alignment check for the full inventory. fo_performance's
--- existing table was empty (0 rows) so converting it to a view was safe;
--- the six DIM_* tables are brand new Django models with nothing to lose.
--- Explicitly NOT touched here: dim_country, dim_mcf, dim_program,
--- dim_season, dim_system, bridge_client_source_ids, program_summary -
--- all already have real local data as physical tables; converting those
--- needs an explicit decision, not a side effect of this pass.
+-- First pass, deliberately narrow: only tables where no existing real
+-- local data was at risk. fo_performance's existing table was empty
+-- (0 rows) so converting it to a view was safe; the six DIM_* tables are
+-- brand new Django models with nothing to lose. dim_country, dim_mcf,
+-- dim_program, dim_season, dim_system, bridge_client_source_ids and
+-- program_summary were deliberately left alone here, since they already
+-- had real local data as physical tables - converting those needed an
+-- explicit decision, not a side effect of this pass. That decision came
+-- (yes, convert all 7) - see the second section further down.
 --
 -- These do NOT get added to analytics_mirror/seed_data.py's MIRROR_MODELS
 -- tuple - that list is for ensure_analytics_tables to create EMPTY TABLES
@@ -153,7 +153,7 @@ SELECT
   "SOURCE_SYSTEM"      AS source_system
 FROM analytics_mirror_raw.dim_product;
 
--- Sanity check
+-- Sanity check (first pass - fo_performance + the 6 new entities)
 SELECT 'fo_performance' AS view_name, count(*) FROM analytics_mirror.fo_performance
 UNION ALL SELECT 'dim_client', count(*) FROM analytics_mirror.dim_client
 UNION ALL SELECT 'dim_date', count(*) FROM analytics_mirror.dim_date
@@ -161,3 +161,174 @@ UNION ALL SELECT 'dim_exchange_rate', count(*) FROM analytics_mirror.dim_exchang
 UNION ALL SELECT 'dim_location', count(*) FROM analytics_mirror.dim_location
 UNION ALL SELECT 'dim_people', count(*) FROM analytics_mirror.dim_people
 UNION ALL SELECT 'dim_product', count(*) FROM analytics_mirror.dim_product;
+
+-- ============================================================
+-- Second pass (2026-09-11, same session) - converting the 7 tables that
+-- were deliberately left alone above, now that the user explicitly
+-- confirmed it: drop the existing real physical tables and rebuild as
+-- views over their now-loaded raw copies, for full architecture parity
+-- with AWS. All 7 already have a Django model - see analytics_mirror/
+-- models.py, nothing new to add there.
+-- ============================================================
+
+-- Country-name-to-ISO normalization, now created locally too - closes
+-- the divergence local_vs_cloud.md flagged (this function previously
+-- existed only on AWS). Identical to infra/postgres/analytics_mirror_views.sql's
+-- version, which itself replicates analytics_mirror/country_codes.py by
+-- hand - all three must be kept in sync manually, there's no way to call
+-- the Python version from SQL.
+CREATE OR REPLACE FUNCTION analytics_mirror.to_iso_country(country_name text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN country_name IS NULL OR trim(country_name) = '' THEN ''
+    ELSE COALESCE(
+      (CASE lower(trim(country_name))
+        WHEN 'malawi' THEN 'MW'
+        WHEN 'kenya' THEN 'KE'
+        WHEN 'rwanda' THEN 'RW'
+        WHEN 'zambia' THEN 'ZM'
+        WHEN 'tanzania' THEN 'TZ'
+        WHEN 'uganda' THEN 'UG'
+        WHEN 'nigeria' THEN 'NG'
+        WHEN 'ethiopia' THEN 'ET'
+        WHEN 'democratic republic of congo' THEN 'CD'
+        WHEN 'drc' THEN 'CD'
+        WHEN 'burundi' THEN 'BI'
+        WHEN 'ghana' THEN 'GH'
+        WHEN 'rw-tbr' THEN 'RW'
+        WHEN 'eth' THEN 'ET'
+      END),
+      upper(trim(country_name))
+    )
+  END;
+$$;
+
+-- dim_country's raw copy landed lowercase-cased (the one anomaly flagged
+-- earlier) - happened to land already matching Django's expected column
+-- names exactly, so no aliasing is needed at all here, unlike every
+-- other view in this file. Confirmed by direct column check before
+-- writing this, not assumed from the anomaly note alone.
+DROP TABLE IF EXISTS analytics_mirror.dim_country;
+CREATE VIEW analytics_mirror.dim_country AS
+SELECT * FROM analytics_mirror_raw.dim_country;
+
+DROP TABLE IF EXISTS analytics_mirror.dim_mcf;
+CREATE VIEW analytics_mirror.dim_mcf AS
+SELECT
+  "MCF_ID"      AS mcf_id,
+  "MCF_ABBREV"  AS mcf_abbrev,
+  "MCF_NAME"    AS mcf_name,
+  "DESCRIPTION" AS description
+FROM analytics_mirror_raw.dim_mcf;
+
+DROP TABLE IF EXISTS analytics_mirror.dim_program;
+CREATE VIEW analytics_mirror.dim_program AS
+SELECT
+  "PROGRAM_ID"            AS program_id,
+  "COUNTRY_CODE"          AS country_code,
+  "COUNTRY_NAME"          AS country_name,
+  "PROGRAM_LOCAL_NAME"    AS program_local_name,
+  "PROGRAM_OAF_EQ"        AS program_oaf_eq,
+  "MATURITY_SCORE"        AS maturity_score,
+  "IS_SEASONAL"           AS is_seasonal,
+  "HAS_GROUPS"            AS has_groups,
+  "CROSS_PROGRAM_ID_TYPE" AS cross_program_id_type,
+  "PHONE_QUALITY"         AS phone_quality,
+  "CLIENT_DEFINITION"     AS client_definition,
+  "MCF_PA"  AS mcf_pa,
+  "MCF_IN"  AS mcf_in,
+  "MCF_SH"  AS mcf_sh,
+  "MCF_FT"  AS mcf_ft,
+  "MCF_TT"  AS mcf_tt,
+  "MCF_FVC" AS mcf_fvc,
+  "MCF_PES" AS mcf_pes
+FROM analytics_mirror_raw.dim_program;
+
+DROP TABLE IF EXISTS analytics_mirror.dim_season;
+CREATE VIEW analytics_mirror.dim_season AS
+SELECT
+  "SEASON_ID"         AS season_id,
+  "COUNTRY_CODE"       AS country_code,
+  "SEASON_NAME"        AS season_name,
+  "LOCAL_NAME"         AS local_name,
+  "RAINFALL_TYPE"      AS rainfall_type,
+  "SEASON_LABEL"       AS season_label,
+  "SEASON_YEAR"        AS season_year,
+  "SEASON_YEAR_LABEL"  AS season_year_label,
+  "START_MONTH"        AS start_month,
+  "END_MONTH"          AS end_month,
+  "CROSSES_YEAR"       AS crosses_year,
+  "IS_PRIMARY"         AS is_primary,
+  "START_DATE"         AS start_date,
+  "END_DATE"           AS end_date
+FROM analytics_mirror_raw.dim_season;
+
+DROP TABLE IF EXISTS analytics_mirror.dim_system;
+CREATE VIEW analytics_mirror.dim_system AS
+SELECT
+  "SYSTEM_ID"          AS system_id,
+  "COUNTRY_CODE"       AS country_code,
+  "COUNTRY_NAME"       AS country_name,
+  "PROGRAM_LOCAL_NAME" AS program_local_name,
+  "PROGRAM_CANONICAL"  AS program_canonical,
+  "SYSTEM_NAME"        AS system_name,
+  "CLIENT_DEFINITION"  AS client_definition
+FROM analytics_mirror_raw.dim_system;
+
+DROP TABLE IF EXISTS analytics_mirror.bridge_client_source_ids;
+CREATE VIEW analytics_mirror.bridge_client_source_ids AS
+SELECT
+  "BRIDGE_ID"                                        AS bridge_id,
+  "GL_CLIENT_ID"                                     AS gl_client_id,
+  "SOURCE_SYSTEM"                                    AS source_system,
+  "SOURCE_PROGRAM"                                   AS source_program,
+  "SOURCE_CLIENT_ID"                                 AS source_client_id,
+  analytics_mirror.to_iso_country("SOURCE_COUNTRY")  AS source_country_code,
+  "SOURCE_FIDELITY"                                  AS source_fidelity,
+  "IS_SINGLETON"                                     AS is_singleton,
+  "MATCH_CONFIDENCE"                                  AS match_confidence,
+  "MATCH_METHOD"                                      AS match_method,
+  "LINKED_AT_TS"                                      AS linked_at_ts
+FROM analytics_mirror_raw.bridge_client_source_ids;
+
+DROP TABLE IF EXISTS analytics_mirror.program_summary;
+CREATE VIEW analytics_mirror.program_summary AS
+SELECT
+  ROW_NUMBER() OVER (ORDER BY "YEAR_MONTH", "COUNTRY", "PROGRAM") AS id,
+  "YEAR_MONTH"         AS year_month,
+  "YEAR"                AS year,
+  "MONTH_NAME"          AS month_name,
+  "MONTH"               AS month,
+  "COUNTRY"             AS country,
+  "PROGRAM"             AS program,
+  "PROGRAM_OAF_EQ"      AS program_oaf_eq,
+  "PROGRAM_LOCAL_NAME"  AS program_local_name,
+  "MATURITY_SCORE"      AS maturity_score,
+  "IS_SEASONAL"         AS is_seasonal,
+  "HAS_GROUPS"          AS has_groups,
+  "MCF_PA"  AS mcf_pa,
+  "MCF_IN"  AS mcf_in,
+  "MCF_SH"  AS mcf_sh,
+  "MCF_FT"  AS mcf_ft,
+  "MCF_TT"  AS mcf_tt,
+  "MCF_FVC" AS mcf_fvc,
+  "MCF_PES" AS mcf_pes,
+  "UNIQUE_CLIENTS"   AS unique_clients,
+  "TOTAL_ORDERS"     AS total_orders,
+  "TOTAL_SALE_LINES" AS total_sale_lines,
+  "TOTAL_SALES_LCY"  AS total_sales_lcy,
+  "TOTAL_SALES_USD"  AS total_sales_usd,
+  "CURRENCY_CODE"    AS currency_code
+FROM analytics_mirror_raw.v_program_summary;
+
+-- Sanity check (second pass)
+SELECT 'dim_country' AS view_name, count(*) FROM analytics_mirror.dim_country
+UNION ALL SELECT 'dim_mcf', count(*) FROM analytics_mirror.dim_mcf
+UNION ALL SELECT 'dim_program', count(*) FROM analytics_mirror.dim_program
+UNION ALL SELECT 'dim_season', count(*) FROM analytics_mirror.dim_season
+UNION ALL SELECT 'dim_system', count(*) FROM analytics_mirror.dim_system
+UNION ALL SELECT 'bridge_client_source_ids', count(*) FROM analytics_mirror.bridge_client_source_ids
+UNION ALL SELECT 'program_summary', count(*) FROM analytics_mirror.program_summary;
