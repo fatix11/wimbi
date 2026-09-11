@@ -19,6 +19,22 @@
 -- dim_location/dim_people/dim_product/v_clients — synced by Airbyte but no
 -- Django model reads them yet (bulk-uploader glossary entities, future
 -- work) — not building views for tables nothing reads.
+--
+-- UPDATED 2026-09-12 — a real, severe performance bug, found and fixed on
+-- the local equivalent of this exact setup, is fixed HERE in the file but
+-- has NOT been applied to the live AWS RDS instance yet. If this file was
+-- already run against RDS before this date, re-run the four affected
+-- CREATE VIEW statements (v_client_journey, sales_line, loan_portfolio,
+-- repayment_transaction) and the index block at the end of this file.
+-- Root cause: a ROW_NUMBER() surrogate id with no PARTITION BY means
+-- Postgres cannot push a WHERE gl_client_id = 'X' filter below the window
+-- function, so every farmer-scoped lookup forces a full sort of the
+-- entire table first. Measured locally: 23.6s and 39.8s query times,
+-- down to under 1ms after adding PARTITION BY "GL_CLIENT_ID" plus an
+-- index on that column in the raw table. See
+-- infra/postgres/analytics_mirror_views_local.sql's "Fifth pass" comment
+-- for the full writeup and real before/after numbers - this file mirrors
+-- that fix, not duplicates the investigation.
 
 -- Replicates analytics_mirror/country_codes.py's _NAME_TO_ISO mapping and
 -- fallback exactly. THESE TWO MUST BE KEPT IN SYNC BY HAND — there is no
@@ -236,7 +252,7 @@ FROM analytics_mirror_raw."V_FO_PERFORMANCE";
 DROP TABLE IF EXISTS analytics_mirror.v_client_journey;
 CREATE VIEW analytics_mirror.v_client_journey AS
 SELECT
-  ROW_NUMBER() OVER (ORDER BY "GL_CLIENT_ID", "EVENT_DATE", "EVENT_TYPE", "SOURCE_REF") AS id,
+  ROW_NUMBER() OVER (PARTITION BY "GL_CLIENT_ID" ORDER BY "EVENT_DATE", "EVENT_TYPE", "SOURCE_REF") AS id,
   "GL_CLIENT_ID"                              AS gl_client_id,
   "CLIENT_NAME"                               AS client_name,
   "GENDER"                                    AS gender,
@@ -255,7 +271,7 @@ FROM analytics_mirror_raw."V_CLIENT_JOURNEY";
 DROP TABLE IF EXISTS analytics_mirror.sales_line;
 CREATE VIEW analytics_mirror.sales_line AS
 SELECT
-  ROW_NUMBER() OVER (ORDER BY "GL_CLIENT_ID", "SALE_DATE", "SOURCE_ORDER_ID", "PRODUCT_NAME") AS id,
+  ROW_NUMBER() OVER (PARTITION BY "GL_CLIENT_ID" ORDER BY "SALE_DATE", "SOURCE_ORDER_ID", "PRODUCT_NAME") AS id,
   "GL_CLIENT_ID"                     AS gl_client_id,
   "CLIENT_NAME"                      AS client_name,
   "GENDER"                           AS gender,
@@ -319,7 +335,7 @@ FROM analytics_mirror_raw."V_SALES_DETAIL";
 DROP TABLE IF EXISTS analytics_mirror.loan_portfolio;
 CREATE VIEW analytics_mirror.loan_portfolio AS
 SELECT
-  ROW_NUMBER() OVER (ORDER BY "GL_CLIENT_ID", "DISBURSEMENT_DATE", "LOAN_ACCOUNT_NUMBER") AS id,
+  ROW_NUMBER() OVER (PARTITION BY "GL_CLIENT_ID" ORDER BY "DISBURSEMENT_DATE", "LOAN_ACCOUNT_NUMBER") AS id,
   "GL_CLIENT_ID"         AS gl_client_id,
   "CLIENT_NAME"          AS client_name,
   "GENDER"               AS gender,
@@ -394,7 +410,7 @@ FROM analytics_mirror_raw."V_PROGRAM_SUMMARY";
 DROP TABLE IF EXISTS analytics_mirror.repayment_transaction;
 CREATE VIEW analytics_mirror.repayment_transaction AS
 SELECT
-  ROW_NUMBER() OVER (ORDER BY "GL_CLIENT_ID", "TRANSACTION_DATE", "SOURCE_TRANSACTION_ID") AS id,
+  ROW_NUMBER() OVER (PARTITION BY "GL_CLIENT_ID" ORDER BY "TRANSACTION_DATE", "SOURCE_TRANSACTION_ID") AS id,
   "GL_CLIENT_ID"          AS gl_client_id,
   "CLIENT_NAME"           AS client_name,
   "GENDER"                AS gender,
@@ -442,3 +458,25 @@ UNION ALL SELECT 'sales_line', count(*) FROM analytics_mirror.sales_line
 UNION ALL SELECT 'loan_portfolio', count(*) FROM analytics_mirror.loan_portfolio
 UNION ALL SELECT 'program_summary', count(*) FROM analytics_mirror.program_summary
 UNION ALL SELECT 'repayment_transaction', count(*) FROM analytics_mirror.repayment_transaction;
+
+-- ============================================================
+-- Added 2026-09-12, mirroring the fix verified locally (see this file's
+-- own header note and analytics_mirror_views_local.sql's "Fifth pass").
+-- None of Airbyte's raw tables have any index at all by default, so even
+-- exact-match lookups (v_client_reach's own PK-like GL_CLIENT_ID) were
+-- full sequential scans before this. The trigram index is specifically
+-- for the search page's ILIKE '%query%' pattern, which a plain B-tree
+-- cannot serve at all (leading wildcard).
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX IF NOT EXISTS idx_v_client_reach_gl_client_id ON analytics_mirror_raw."V_CLIENT_REACH" ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_v_client_journey_gl_client_id ON analytics_mirror_raw."V_CLIENT_JOURNEY" ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_v_sales_detail_gl_client_id ON analytics_mirror_raw."V_SALES_DETAIL" ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_v_loan_portfolio_gl_client_id ON analytics_mirror_raw."V_LOAN_PORTFOLIO" ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_v_repayment_analysis_gl_client_id ON analytics_mirror_raw."V_REPAYMENT_ANALYSIS" ("GL_CLIENT_ID");
+CREATE INDEX IF NOT EXISTS idx_bridge_client_source_ids_gl_client_id ON analytics_mirror_raw."BRIDGE_CLIENT_SOURCE_IDS" ("GL_CLIENT_ID");
+
+CREATE INDEX IF NOT EXISTS idx_v_client_reach_full_name_trgm ON analytics_mirror_raw."V_CLIENT_REACH" USING gin ("FULL_NAME" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_v_client_reach_gl_client_id_trgm ON analytics_mirror_raw."V_CLIENT_REACH" USING gin ("GL_CLIENT_ID" gin_trgm_ops);
